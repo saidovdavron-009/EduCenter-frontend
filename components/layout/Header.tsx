@@ -1,6 +1,7 @@
 "use client";
 import React from "react";
 import { useRouter } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
 import { Menu, Bell, Search, Sun, Moon, LogOut, User, Settings, ChevronDown } from "lucide-react";
 import { useUIStore } from "@/store/uiStore";
 import { useAuthStore } from "@/store/authStore";
@@ -8,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { UserAvatar } from "@/components/ui/avatar";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { cn } from "@/lib/utils";
+import { notificationsApi } from "@/lib/api";
 
 interface HeaderProps {
   title?: string;
@@ -17,6 +19,13 @@ export function Header({ title }: HeaderProps) {
   const router = useRouter();
   const { toggleSidebar, theme, setTheme } = useUIStore();
   const { user, logout } = useAuthStore();
+
+  const { data: notifData } = useQuery({
+    queryKey: ["header-notifications"],
+    queryFn: () => notificationsApi.getAll({ limit: 1 }).then((r) => r.data as { meta: { unreadCount: number } }),
+    refetchInterval: 30000,
+  });
+  const unreadCount = notifData?.meta?.unreadCount ?? 0;
 
   const handleLogout = () => {
     logout();
@@ -29,6 +38,16 @@ export function Header({ title }: HeaderProps) {
       case "TEACHER": return "/teacher/profile";
       case "STUDENT": return "/student/profile";
       case "PARENT": return "/parent/profile";
+      default: return "/login";
+    }
+  };
+
+  const getRoleNotifications = () => {
+    switch (user?.role) {
+      case "ADMIN": return "/admin/notifications";
+      case "TEACHER": return "/teacher/notifications";
+      case "STUDENT": return "/student/notifications";
+      case "PARENT": return "/parent/notifications";
       default: return "/login";
     }
   };
@@ -64,9 +83,18 @@ export function Header({ title }: HeaderProps) {
         </Button>
 
         {/* Notifications */}
-        <Button variant="ghost" size="icon" className="relative text-[var(--muted-foreground)]">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="relative text-[var(--muted-foreground)]"
+          onClick={() => router.push(getRoleNotifications())}
+        >
           <Bell className="h-4 w-4" />
-          <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-red-500" />
+          {unreadCount > 0 && (
+            <span className="absolute top-1 right-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
+              {unreadCount > 9 ? "9+" : unreadCount}
+            </span>
+          )}
         </Button>
 
         {/* User menu */}
@@ -74,13 +102,13 @@ export function Header({ title }: HeaderProps) {
           <DropdownMenu.Trigger asChild>
             <button className="flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-[var(--muted)] transition-colors">
               <UserAvatar
-                name={user?.profile?.fullName || user?.email || "U"}
-                avatarUrl={user?.profile?.avatarUrl}
+                name={user?.profile?.fullName || user?.email || user?.loginId || "U"}
+                avatarUrl={user?.avatarUrl ?? user?.profile?.avatarUrl}
                 size="sm"
               />
               <div className="hidden sm:block text-left min-w-0">
                 <p className="text-sm font-medium text-[var(--foreground)] truncate max-w-[120px]">
-                  {user?.profile?.fullName || user?.email}
+                  {user?.profile?.fullName || user?.email || user?.loginId}
                 </p>
                 <p className="text-xs text-[var(--muted-foreground)]">
                   {user?.role ? roleLabel[user.role] : ""}
@@ -101,8 +129,8 @@ export function Header({ title }: HeaderProps) {
               )}
             >
               <div className="px-3 py-2 mb-1 border-b border-[var(--border)]">
-                <p className="text-sm font-medium">{user?.profile?.fullName || user?.email}</p>
-                <p className="text-xs text-[var(--muted-foreground)]">{user?.email}</p>
+                <p className="text-sm font-medium">{user?.profile?.fullName || user?.email || user?.loginId}</p>
+                <p className="text-xs text-[var(--muted-foreground)]">{user?.email || (user?.loginId ? `ID: ${user.loginId}` : "")}</p>
               </div>
               <DropdownMenu.Item
                 className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm cursor-pointer hover:bg-[var(--muted)] outline-none"

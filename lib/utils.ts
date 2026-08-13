@@ -116,11 +116,6 @@ export function calculatePercentage(value: number, total: number): number {
   return Math.round((value / total) * 100);
 }
 
-export function generateTempPassword(length = 8): string {
-  const chars = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
-  return Array.from({ length }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
-}
-
 export function truncate(str: string, maxLength: number): string {
   if (str.length <= maxLength) return str;
   return str.slice(0, maxLength) + "...";

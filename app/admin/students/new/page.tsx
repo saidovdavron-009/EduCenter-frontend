@@ -4,37 +4,26 @@ import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { ArrowLeft, Save, User, Copy, Eye, EyeOff } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ArrowLeft, Save, User, Copy, Eye, EyeOff, CheckCircle2 } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { studentsApi, groupsApi } from "@/lib/api";
 import toast from "react-hot-toast";
 
-const mockGroups = [
-  { id: "1", name: "Ingliz tili A2", subject: "Ingliz tili", teacher: "Sardor Toshmatov" },
-  { id: "2", name: "Matematika B1", subject: "Matematika", teacher: "Nilufar Karimova" },
-  { id: "3", name: "Fizika A1", subject: "Fizika", teacher: "Jasur Yusupov" },
-  { id: "4", name: "Rus tili A1", subject: "Rus tili", teacher: "Zulfiya Abdullayeva" },
-];
-
-const CURRENT_STUDENT_COUNT = 25;
-
-function genPassword(seed: number) {
-  const chars = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
-  let result = "";
-  let n = seed * 9301 + 49297;
-  for (let i = 0; i < 8; i++) {
-    n = (n * 9301 + 49297) % 233280;
-    result += chars[n % chars.length];
-  }
-  return result;
+interface GroupOption {
+  id: string;
+  name: string;
+  subjectName: string;
 }
 
-const nextId = CURRENT_STUDENT_COUNT + 1;
-const nextStudentId = `ID${String(nextId).padStart(3, "0")}`;
-const generatedPassword = genPassword(nextId);
+interface CreatedCredentials {
+  loginId: string;
+  tempPassword: string;
+}
 
 const studentSchema = z.object({
   fullName: z.string().min(3, "Ism kamida 3 ta belgi"),
@@ -49,9 +38,23 @@ const studentSchema = z.object({
 
 type StudentFormData = z.infer<typeof studentSchema>;
 
+function extractErrorMessage(error: unknown): string {
+  const data = (error as { response?: { data?: { message?: string | string[] } } })?.response?.data;
+  if (Array.isArray(data?.message)) return data.message[0];
+  return data?.message || "Xatolik yuz berdi";
+}
+
 export default function NewStudentPage() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const [showPassword, setShowPassword] = React.useState(false);
+  const [created, setCreated] = React.useState<CreatedCredentials | null>(null);
+
+  const { data: groupsRes } = useQuery({
+    queryKey: ["groups-options"],
+    queryFn: () => groupsApi.getAll({ limit: 100 }).then((r) => r.data as { data: GroupOption[] }),
+  });
+  const groups = groupsRes?.data ?? [];
 
   const {
     register,
@@ -63,16 +66,83 @@ export default function NewStudentPage() {
     resolver: zodResolver(studentSchema),
   });
 
-  const onSubmit = (data: StudentFormData) => {
-    console.log("New student:", { ...data, studentId: nextStudentId, password: generatedPassword });
-    toast.success(`O'quvchi qo'shildi! ID: ${nextStudentId}`);
-    router.push("/admin/students");
-  };
+  const mutation = useMutation({
+    mutationFn: (data: StudentFormData) => {
+      const cleaned = Object.fromEntries(
+        Object.entries(data).filter(([, v]) => v !== "" && v !== undefined)
+      );
+      return studentsApi.create(cleaned).then((r) => r.data as { loginId: string; tempPassword: string });
+    },
+    onSuccess: (data) => {
+      toast.success("O'quvchi qo'shildi!");
+      queryClient.invalidateQueries({ queryKey: ["students"] });
+      setCreated({ loginId: data.loginId, tempPassword: data.tempPassword });
+    },
+    onError: (error) => toast.error(extractErrorMessage(error)),
+  });
+
+  const onSubmit = (data: StudentFormData) => mutation.mutate(data);
 
   const copyCredentials = () => {
-    navigator.clipboard.writeText(`Login: ${nextStudentId}\nParol: ${generatedPassword}`);
+    if (!created) return;
+    navigator.clipboard.writeText(`ID: ${created.loginId}\nParol: ${created.tempPassword}`);
     toast.success("Kirish ma'lumotlari nusxalandi!");
   };
+
+  if (created) {
+    return (
+      <div className="space-y-6 max-w-lg">
+        <div className="flex items-center gap-3">
+          <Link href="/admin/students">
+            <Button variant="ghost" size="icon">
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
+          </Link>
+          <div>
+            <h1 className="text-xl sm:text-2xl font-bold">O'quvchi yaratildi</h1>
+          </div>
+        </div>
+
+        <div className="rounded-xl border-2 border-green-500/30 bg-green-500/5 p-6">
+          <div className="flex items-center gap-2 text-green-600 mb-4">
+            <CheckCircle2 className="h-5 w-5" />
+            <p className="text-sm font-semibold">Hisob muvaffaqiyatli yaratildi</p>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <p className="text-xs text-[var(--muted-foreground)] mb-1">Login ID</p>
+              <span className="font-mono font-bold text-[#1E3A5F] text-lg bg-[#1E3A5F]/10 px-3 py-1 rounded-lg block w-fit">
+                {created.loginId}
+              </span>
+            </div>
+            <div>
+              <p className="text-xs text-[var(--muted-foreground)] mb-1">Parol</p>
+              <div className="flex items-center gap-2">
+                <span className="font-mono font-bold text-[#1E3A5F] text-lg bg-[#1E3A5F]/10 px-3 py-1 rounded-lg">
+                  {showPassword ? created.tempPassword : "••••••"}
+                </span>
+                <button type="button" onClick={() => setShowPassword((v) => !v)} className="text-[var(--muted-foreground)] hover:text-[#1E3A5F] transition-colors">
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+          </div>
+          <Button type="button" variant="outline" size="sm" onClick={copyCredentials} className="mt-4">
+            <Copy className="h-4 w-4" />
+            Nusxalash
+          </Button>
+          <p className="text-xs text-[var(--muted-foreground)] mt-3">
+            Bu ID va parolni o'quvchiga bering. Bu ma'lumotlar boshqa hech qayerda ko'rsatilmaydi — saqlab qo'ying.
+            O'quvchi tizimga shu ID va parol bilan kiradi.
+          </p>
+        </div>
+
+        <div className="flex gap-3 justify-end">
+          <Button onClick={() => router.push("/admin/students")}>O'quvchilar ro'yxatiga o'tish</Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 max-w-3xl">
@@ -88,39 +158,8 @@ export default function NewStudentPage() {
         </div>
       </div>
 
-      {/* Auto-generated credentials */}
-      <div className="rounded-xl border-2 border-[#1E3A5F]/20 bg-[#1E3A5F]/5 p-5">
-        <p className="text-sm font-semibold text-[#1E3A5F] mb-3">Avtomatik tayinlangan kirish ma'lumotlari</p>
-        <div className="flex flex-wrap items-center gap-4">
-          <div>
-            <p className="text-xs text-[var(--muted-foreground)] mb-1">Login (ID)</p>
-            <span className="font-mono font-bold text-[#1E3A5F] text-lg bg-[#1E3A5F]/10 px-3 py-1 rounded-lg">
-              {nextStudentId}
-            </span>
-          </div>
-          <div>
-            <p className="text-xs text-[var(--muted-foreground)] mb-1">Parol</p>
-            <div className="flex items-center gap-2">
-              <span className="font-mono font-bold text-[#1E3A5F] text-lg bg-[#1E3A5F]/10 px-3 py-1 rounded-lg">
-                {showPassword ? generatedPassword : "••••••••"}
-              </span>
-              <button
-                type="button"
-                onClick={() => setShowPassword(v => !v)}
-                className="text-[var(--muted-foreground)] hover:text-[#1E3A5F] transition-colors"
-              >
-                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-              </button>
-            </div>
-          </div>
-          <Button type="button" variant="outline" size="sm" onClick={copyCredentials} className="ml-auto">
-            <Copy className="h-4 w-4" />
-            Nusxalash
-          </Button>
-        </div>
-        <p className="text-xs text-[var(--muted-foreground)] mt-3">
-          Bu ma'lumotlarni o'quvchiga bering. O'quvchi tizimga shu ID va parol bilan kiradi.
-        </p>
+      <div className="rounded-xl border border-[var(--border)] bg-[var(--muted)]/40 p-4 text-sm text-[var(--muted-foreground)]">
+        Saqlangandan so'ng tizimga kirish uchun ID raqami va parol avtomatik yaratiladi va sizga ko'rsatiladi.
       </div>
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
@@ -190,9 +229,9 @@ export default function NewStudentPage() {
                   <SelectValue placeholder="Guruh tanlang" />
                 </SelectTrigger>
                 <SelectContent>
-                  {mockGroups.map((g) => (
+                  {groups.map((g) => (
                     <SelectItem key={g.id} value={g.id}>
-                      {g.name} — {g.subject}
+                      {g.name} — {g.subjectName}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -210,7 +249,7 @@ export default function NewStudentPage() {
           <Link href="/admin/students">
             <Button variant="outline">Bekor qilish</Button>
           </Link>
-          <Button type="submit">
+          <Button type="submit" disabled={mutation.isPending}>
             <Save className="h-4 w-4" />
             Saqlash
           </Button>

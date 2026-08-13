@@ -220,8 +220,17 @@ export interface DashboardStats {
   totalGroups: number;
   monthlyRevenue: number;
   pendingPayments: number;
-  todayAttendance: number;
+  todayAttendanceRate: number;
   totalAttendanceRate: number;
+  recentActivities?: unknown[];
+}
+
+export interface AttendanceStats {
+  present: number;
+  absent: number;
+  late: number;
+  excused: number;
+  percentage: number;
 }
 
 export interface RevenueData {
@@ -253,10 +262,13 @@ export interface AuthTokens {
 
 export interface AuthUser {
   id: string;
-  email: string;
+  email: string | null;
+  loginId: string | null;
   role: UserRole;
   isActive: boolean;
+  avatarUrl?: string | null;
   profile?: {
+    id: string;
     fullName: string;
     avatarUrl?: string;
   };

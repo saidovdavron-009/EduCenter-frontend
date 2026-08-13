@@ -1,24 +1,110 @@
 "use client";
 import React from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Calendar, FileText, CheckCircle, Clock, Users } from "lucide-react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { ArrowLeft, Calendar, FileText, CheckCircle, Clock, Users, Paperclip } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { formatDate } from "@/lib/utils";
+import { UserAvatar } from "@/components/ui/avatar";
+import { formatDate, formatDateTime } from "@/lib/utils";
+import { homeworkApi, groupsApi, teachersApi } from "@/lib/api";
+import toast from "react-hot-toast";
 
-const allHomework = [
-  { id: "1", groupId: "1", groupName: "Ingliz tili A2", teacherName: "Aziz Karimov", title: "Unit 5 - Grammar mashqlari", description: "Past Simple va Present Perfect farqi. Darslikdan 1-30 mashqlarni bajaring.", dueDate: "2025-01-25", createdAt: "2025-01-20T00:00:00Z", submittedCount: 8, totalStudents: 10 },
-  { id: "2", groupId: "2", groupName: "Matematika B1", teacherName: "Sardor Toshmatov", title: "Kvadrat tenglamalar", description: "1-10 mashqlar, formula bilan yechish. Javoblarni tekshiring.", dueDate: "2025-01-26", createdAt: "2025-01-21T00:00:00Z", submittedCount: 5, totalStudents: 12 },
-  { id: "3", groupId: "3", groupName: "Fizika A1", teacherName: "Malika Yusupova", title: "Nyuton qonunlari", description: "Misollar 15-25. Har bir misolni tushuntiring.", dueDate: "2025-01-27", createdAt: "2025-01-22T00:00:00Z", submittedCount: 10, totalStudents: 10 },
-  { id: "4", groupId: "1", groupName: "Ingliz tili A2", teacherName: "Aziz Karimov", title: "Speaking practice", description: "3 daqiqa ovozli xabar. O'zingiz haqingizda gapirib bering.", dueDate: "2025-01-30", createdAt: "2025-01-23T00:00:00Z", submittedCount: 3, totalStudents: 10 },
-];
+interface Submission {
+  id: string;
+  studentName: string;
+  text: string | null;
+  fileUrl: string | null;
+  score: number | null;
+  feedback: string | null;
+  submittedAt: string;
+  gradedAt: string | null;
+}
+interface HomeworkDetail {
+  id: string;
+  groupId: string;
+  teacherId: string;
+  title: string;
+  description: string | null;
+  dueDate: string;
+  maxScore: number;
+  createdAt: string;
+  submissions: Submission[];
+}
+
+function extractErrorMessage(error: unknown): string {
+  const data = (error as { response?: { data?: { message?: string | string[] } } })?.response?.data;
+  if (Array.isArray(data?.message)) return data.message[0];
+  return data?.message || "Xatolik yuz berdi";
+}
+
+function GradeRow({ homeworkId, submission, maxScore }: { homeworkId: string; submission: Submission; maxScore: number }) {
+  const queryClient = useQueryClient();
+  const [score, setScore] = React.useState(submission.score != null ? String(submission.score) : "");
+  const [feedback, setFeedback] = React.useState(submission.feedback ?? "");
+
+  const gradeMutation = useMutation({
+    mutationFn: () => homeworkApi.grade(homeworkId, submission.id, { score: Number(score), feedback: feedback || undefined }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["homework", homeworkId] });
+      toast.success("Baholandi");
+    },
+    onError: (e) => toast.error(extractErrorMessage(e)),
+  });
+
+  return (
+    <div className="flex flex-col sm:flex-row sm:items-center gap-3 py-3 border-b border-[var(--border)] last:border-0">
+      <div className="flex items-center gap-2 min-w-0 sm:w-48 shrink-0">
+        <UserAvatar name={submission.studentName} size="sm" />
+        <span className="text-sm font-medium truncate">{submission.studentName}</span>
+      </div>
+      <div className="flex-1 min-w-0 text-sm text-[var(--muted-foreground)]">
+        {submission.text && <p className="line-clamp-2">{submission.text}</p>}
+        {submission.fileUrl && (
+          <a href={submission.fileUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-[#1E3A5F] hover:underline">
+            <Paperclip className="h-3 w-3" />Fayl
+          </a>
+        )}
+        <p className="text-xs mt-0.5">{formatDateTime(submission.submittedAt)}</p>
+      </div>
+      <div className="flex items-center gap-2 shrink-0">
+        <Input type="number" placeholder="Ball" value={score} onChange={(e) => setScore(e.target.value)} className="w-20 h-8 text-sm" />
+        <span className="text-xs text-[var(--muted-foreground)]">/{maxScore}</span>
+        <Input placeholder="Izoh" value={feedback} onChange={(e) => setFeedback(e.target.value)} className="w-32 h-8 text-sm" />
+        <Button size="sm" className="h-8 text-xs" loading={gradeMutation.isPending} onClick={() => gradeMutation.mutate()} disabled={!score}>
+          {submission.gradedAt ? "Yangilash" : "Baholash"}
+        </Button>
+      </div>
+    </div>
+  );
+}
 
 export default function AdminHomeworkDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
 
-  const hw = allHomework.find(h => h.id === id);
+  const { data: hw, isLoading } = useQuery({
+    queryKey: ["homework", id],
+    queryFn: () => homeworkApi.getById(id).then((r) => r.data as HomeworkDetail),
+  });
+
+  const { data: group } = useQuery({
+    queryKey: ["group-detail", hw?.groupId],
+    queryFn: () => groupsApi.getById(hw!.groupId).then((r) => r.data as { name: string; currentCount: number }),
+    enabled: !!hw?.groupId,
+  });
+
+  const { data: teacher } = useQuery({
+    queryKey: ["teacher", hw?.teacherId],
+    queryFn: () => teachersApi.getById(hw!.teacherId).then((r) => r.data as { fullName: string }),
+    enabled: !!hw?.teacherId,
+  });
+
+  if (isLoading) {
+    return <div className="max-w-2xl space-y-4"><div className="h-40 bg-[var(--muted)] rounded-xl animate-pulse" /></div>;
+  }
 
   if (!hw) {
     return (
@@ -30,7 +116,9 @@ export default function AdminHomeworkDetailPage() {
   }
 
   const isOverdue = new Date(hw.dueDate) < new Date();
-  const pct = Math.round((hw.submittedCount / hw.totalStudents) * 100);
+  const totalStudents = group?.currentCount ?? 0;
+  const submittedCount = hw.submissions.length;
+  const pct = totalStudents > 0 ? Math.round((submittedCount / totalStudents) * 100) : 0;
 
   return (
     <div className="space-y-4 max-w-2xl">
@@ -50,7 +138,7 @@ export default function AdminHomeworkDetailPage() {
               </div>
               <div>
                 <p className="font-semibold">{hw.title}</p>
-                <p className="text-sm text-[var(--muted-foreground)]">{hw.groupName}</p>
+                <p className="text-sm text-[var(--muted-foreground)]">{group?.name ?? "—"}</p>
               </div>
             </div>
             <Badge variant={isOverdue ? "destructive" : "success"}>
@@ -58,7 +146,7 @@ export default function AdminHomeworkDetailPage() {
             </Badge>
           </div>
 
-          <p className="text-sm leading-relaxed">{hw.description}</p>
+          {hw.description && <p className="text-sm leading-relaxed">{hw.description}</p>}
 
           <div className="grid grid-cols-2 gap-3 text-sm">
             <div className="flex items-center gap-2 text-[var(--muted-foreground)]">
@@ -67,7 +155,7 @@ export default function AdminHomeworkDetailPage() {
             </div>
             <div className="flex items-center gap-2 text-[var(--muted-foreground)]">
               <Users className="h-4 w-4 shrink-0" />
-              <span>O'qituvchi: {hw.teacherName}</span>
+              <span>O'qituvchi: {teacher?.fullName ?? "—"}</span>
             </div>
           </div>
         </CardContent>
@@ -76,19 +164,19 @@ export default function AdminHomeworkDetailPage() {
       <div className="grid grid-cols-3 gap-3">
         <Card>
           <CardContent className="pt-4 pb-4 text-center">
-            <p className="text-2xl font-bold text-[#1E3A5F]">{hw.totalStudents}</p>
+            <p className="text-2xl font-bold text-[#1E3A5F]">{totalStudents}</p>
             <p className="text-xs text-[var(--muted-foreground)] mt-0.5">Jami o'quvchi</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-4 pb-4 text-center">
-            <p className="text-2xl font-bold text-green-600">{hw.submittedCount}</p>
+            <p className="text-2xl font-bold text-green-600">{submittedCount}</p>
             <p className="text-xs text-[var(--muted-foreground)] mt-0.5">Topshirdi</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-4 pb-4 text-center">
-            <p className="text-2xl font-bold text-amber-500">{hw.totalStudents - hw.submittedCount}</p>
+            <p className="text-2xl font-bold text-amber-500">{Math.max(totalStudents - submittedCount, 0)}</p>
             <p className="text-xs text-[var(--muted-foreground)] mt-0.5">Topshirmadi</p>
           </CardContent>
         </Card>
@@ -108,9 +196,20 @@ export default function AdminHomeworkDetailPage() {
             />
           </div>
           <div className="flex items-center justify-between text-xs text-[var(--muted-foreground)]">
-            <span className="flex items-center gap-1"><CheckCircle className="h-3.5 w-3.5 text-green-500" />{hw.submittedCount} topshirdi</span>
-            <span className="flex items-center gap-1"><Clock className="h-3.5 w-3.5 text-amber-500" />{hw.totalStudents - hw.submittedCount} kutilmoqda</span>
+            <span className="flex items-center gap-1"><CheckCircle className="h-3.5 w-3.5 text-green-500" />{submittedCount} topshirdi</span>
+            <span className="flex items-center gap-1"><Clock className="h-3.5 w-3.5 text-amber-500" />{Math.max(totalStudents - submittedCount, 0)} kutilmoqda</span>
           </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader><CardTitle className="text-sm">Topshiriqlar</CardTitle></CardHeader>
+        <CardContent>
+          {hw.submissions.length === 0 ? (
+            <p className="text-sm text-[var(--muted-foreground)] py-4 text-center">Hali hech kim topshirmagan</p>
+          ) : (
+            hw.submissions.map((s) => <GradeRow key={s.id} homeworkId={hw.id} submission={s} maxScore={hw.maxScore} />)
+          )}
         </CardContent>
       </Card>
     </div>

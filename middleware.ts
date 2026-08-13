@@ -20,7 +20,7 @@ function parseJwt(token: string) {
   }
 }
 
-export function proxy(request: NextRequest) {
+export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   if (pathname === "/register") {

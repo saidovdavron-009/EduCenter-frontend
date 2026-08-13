@@ -1,94 +1,102 @@
 "use client";
 import React from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Calendar, FileText, CheckCircle, XCircle, Clock } from "lucide-react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { ArrowLeft, Calendar, FileText, CheckCircle, Clock, Paperclip } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { UserAvatar } from "@/components/ui/avatar";
-import { formatDate } from "@/lib/utils";
+import { formatDate, formatDateTime } from "@/lib/utils";
+import { homeworkApi, groupsApi } from "@/lib/api";
 import toast from "react-hot-toast";
 
-interface Student {
+interface Submission {
   id: string;
-  name: string;
-  status: "SUBMITTED" | "PENDING" | "GRADED";
-  grade?: number;
-  submittedAt?: string;
+  studentName: string;
+  text: string | null;
+  fileUrl: string | null;
+  score: number | null;
+  feedback: string | null;
+  submittedAt: string;
+  gradedAt: string | null;
+}
+interface HomeworkDetail {
+  id: string;
+  groupId: string;
+  title: string;
+  description: string | null;
+  dueDate: string;
+  maxScore: number;
+  submissions: Submission[];
 }
 
-const allHomework = [
-  {
-    id: "1", title: "Present Simple mashqlari", groupName: "Ingliz tili A2",
-    dueDate: "2025-01-28", description: "1-50 mashqlarni bajaring",
-    submittedCount: 7, totalStudents: 10, status: "ACTIVE",
-    students: [
-      { id: "s1", name: "Alibek Karimov", status: "SUBMITTED", submittedAt: "2025-01-27" },
-      { id: "s2", name: "Zulfiya Rahimova", status: "GRADED", grade: 90, submittedAt: "2025-01-26" },
-      { id: "s3", name: "Jasur Toshmatov", status: "SUBMITTED", submittedAt: "2025-01-27" },
-      { id: "s4", name: "Malika Yusupova", status: "PENDING" },
-      { id: "s5", name: "Bobur Nazarov", status: "GRADED", grade: 85, submittedAt: "2025-01-25" },
-      { id: "s6", name: "Nilufar Hasanova", status: "SUBMITTED", submittedAt: "2025-01-28" },
-      { id: "s7", name: "Sardor Alimov", status: "PENDING" },
-      { id: "s8", name: "Dildora Mirzayeva", status: "SUBMITTED", submittedAt: "2025-01-27" },
-      { id: "s9", name: "Firdavs Ergashev", status: "GRADED", grade: 95, submittedAt: "2025-01-26" },
-      { id: "s10", name: "Kamola Sobirov", status: "PENDING" },
-    ] as Student[],
-  },
-  {
-    id: "2", title: "Reading comprehension", groupName: "Ingliz tili B1",
-    dueDate: "2025-01-29", description: "Unit 5 matnini o'qib savollarni javoblang",
-    submittedCount: 5, totalStudents: 8, status: "ACTIVE",
-    students: [
-      { id: "s1", name: "Sherzod Qodirov", status: "SUBMITTED", submittedAt: "2025-01-28" },
-      { id: "s2", name: "Nozima Tursunova", status: "GRADED", grade: 88, submittedAt: "2025-01-27" },
-      { id: "s3", name: "Ulugbek Mirzaev", status: "PENDING" },
-      { id: "s4", name: "Feruza Xolmatova", status: "SUBMITTED", submittedAt: "2025-01-28" },
-      { id: "s5", name: "Akbar Razzaqov", status: "PENDING" },
-      { id: "s6", name: "Dilorom Yusupova", status: "SUBMITTED", submittedAt: "2025-01-27" },
-      { id: "s7", name: "Muzaffar Holiqov", status: "GRADED", grade: 76, submittedAt: "2025-01-26" },
-      { id: "s8", name: "Shahlo Nazarova", status: "SUBMITTED", submittedAt: "2025-01-29" },
-    ] as Student[],
-  },
-  {
-    id: "3", title: "Vocabulary list", groupName: "Ingliz tili A2",
-    dueDate: "2025-01-22", description: "100 ta yangi so'zni yodlang",
-    submittedCount: 9, totalStudents: 10, status: "EXPIRED",
-    students: [
-      { id: "s1", name: "Alibek Karimov", status: "GRADED", grade: 92, submittedAt: "2025-01-21" },
-      { id: "s2", name: "Zulfiya Rahimova", status: "GRADED", grade: 87, submittedAt: "2025-01-20" },
-      { id: "s3", name: "Jasur Toshmatov", status: "GRADED", grade: 79, submittedAt: "2025-01-22" },
-      { id: "s4", name: "Malika Yusupova", status: "PENDING" },
-      { id: "s5", name: "Bobur Nazarov", status: "GRADED", grade: 95, submittedAt: "2025-01-19" },
-      { id: "s6", name: "Nilufar Hasanova", status: "GRADED", grade: 83, submittedAt: "2025-01-21" },
-      { id: "s7", name: "Sardor Alimov", status: "GRADED", grade: 70, submittedAt: "2025-01-22" },
-      { id: "s8", name: "Dildora Mirzayeva", status: "GRADED", grade: 88, submittedAt: "2025-01-20" },
-      { id: "s9", name: "Firdavs Ergashev", status: "GRADED", grade: 100, submittedAt: "2025-01-18" },
-      { id: "s10", name: "Kamola Sobirov", status: "GRADED", grade: 66, submittedAt: "2025-01-22" },
-    ] as Student[],
-  },
-  {
-    id: "4", title: "Speaking practice", groupName: "Speaking Club",
-    dueDate: "2025-01-30", description: "2 daqiqalik nutq tayyorlang",
-    submittedCount: 2, totalStudents: 6, status: "ACTIVE",
-    students: [
-      { id: "s1", name: "Hamza Nazarov", status: "SUBMITTED", submittedAt: "2025-01-29" },
-      { id: "s2", name: "Lobar Toshpulatova", status: "PENDING" },
-      { id: "s3", name: "Anvar Qosimov", status: "PENDING" },
-      { id: "s4", name: "Mohira Abdullayeva", status: "SUBMITTED", submittedAt: "2025-01-28" },
-      { id: "s5", name: "Ravshan Yo'ldoshev", status: "PENDING" },
-      { id: "s6", name: "Barno Salimova", status: "PENDING" },
-    ] as Student[],
-  },
-];
+function extractErrorMessage(error: unknown): string {
+  const data = (error as { response?: { data?: { message?: string | string[] } } })?.response?.data;
+  if (Array.isArray(data?.message)) return data.message[0];
+  return data?.message || "Xatolik yuz berdi";
+}
+
+function GradeRow({ homeworkId, submission, maxScore }: { homeworkId: string; submission: Submission; maxScore: number }) {
+  const queryClient = useQueryClient();
+  const [score, setScore] = React.useState(submission.score != null ? String(submission.score) : "");
+  const [feedback, setFeedback] = React.useState(submission.feedback ?? "");
+
+  const gradeMutation = useMutation({
+    mutationFn: () => homeworkApi.grade(homeworkId, submission.id, { score: Number(score), feedback: feedback || undefined }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["homework", homeworkId] });
+      toast.success("Baholandi");
+    },
+    onError: (e) => toast.error(extractErrorMessage(e)),
+  });
+
+  return (
+    <div className="flex flex-col sm:flex-row sm:items-center gap-3 py-3 border-b border-[var(--border)] last:border-0">
+      <div className="flex items-center gap-2 min-w-0 sm:w-48 shrink-0">
+        <UserAvatar name={submission.studentName} size="sm" />
+        <span className="text-sm font-medium truncate">{submission.studentName}</span>
+      </div>
+      <div className="flex-1 min-w-0 text-sm text-[var(--muted-foreground)]">
+        {submission.text && <p className="line-clamp-2">{submission.text}</p>}
+        {submission.fileUrl && (
+          <a href={submission.fileUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-[#1E3A5F] hover:underline">
+            <Paperclip className="h-3 w-3" />Fayl
+          </a>
+        )}
+        <p className="text-xs mt-0.5">{formatDateTime(submission.submittedAt)}</p>
+      </div>
+      <div className="flex items-center gap-2 shrink-0">
+        <Input type="number" placeholder="Ball" value={score} onChange={(e) => setScore(e.target.value)} className="w-20 h-8 text-sm" />
+        <span className="text-xs text-[var(--muted-foreground)]">/{maxScore}</span>
+        <Input placeholder="Izoh" value={feedback} onChange={(e) => setFeedback(e.target.value)} className="w-32 h-8 text-sm" />
+        <Button size="sm" className="h-8 text-xs" loading={gradeMutation.isPending} onClick={() => gradeMutation.mutate()} disabled={!score}>
+          {submission.gradedAt ? "Yangilash" : "Baholash"}
+        </Button>
+      </div>
+    </div>
+  );
+}
 
 export default function TeacherHomeworkDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
 
-  const hw = allHomework.find(h => h.id === id);
-  const [grades, setGrades] = React.useState<Record<string, string>>({});
-  const [students, setStudents] = React.useState(hw?.students || []);
+  const { data: hw, isLoading } = useQuery({
+    queryKey: ["homework", id],
+    queryFn: () => homeworkApi.getById(id as string).then((r) => r.data as HomeworkDetail),
+  });
+
+  const { data: group } = useQuery({
+    queryKey: ["group-detail", hw?.groupId],
+    queryFn: () => groupsApi.getById(hw!.groupId).then((r) => r.data as { name: string; currentCount: number }),
+    enabled: !!hw?.groupId,
+  });
+
+  if (isLoading) {
+    return <div className="max-w-2xl space-y-4"><div className="h-40 bg-[var(--muted)] rounded-xl animate-pulse" /></div>;
+  }
 
   if (!hw) {
     return (
@@ -99,20 +107,13 @@ export default function TeacherHomeworkDetailPage() {
     );
   }
 
-  const pct = Math.round((hw.submittedCount / hw.totalStudents) * 100);
-  const submittedStudents = students.filter(s => s.status === "SUBMITTED" || s.status === "GRADED");
-  const pendingStudents = students.filter(s => s.status === "PENDING");
-
-  const handleGrade = (studentId: string) => {
-    const val = parseInt(grades[studentId] || "");
-    if (isNaN(val) || val < 0 || val > 100) { toast.error("0–100 oraliqda ball kiriting"); return; }
-    setStudents(prev => prev.map(s => s.id === studentId ? { ...s, status: "GRADED" as const, grade: val } : s));
-    setGrades(prev => { const n = { ...prev }; delete n[studentId]; return n; });
-    toast.success("Ball qo'yildi");
-  };
+  const isOverdue = new Date(hw.dueDate) < new Date();
+  const totalStudents = group?.currentCount ?? 0;
+  const submittedCount = hw.submissions.length;
+  const pct = totalStudents > 0 ? Math.round((submittedCount / totalStudents) * 100) : 0;
 
   return (
-    <div className="space-y-4 max-w-3xl">
+    <div className="space-y-4 max-w-2xl">
       <div className="flex items-center gap-3">
         <button onClick={() => router.back()} className="p-2 rounded-xl hover:bg-[var(--muted)] transition-colors">
           <ArrowLeft className="h-5 w-5" />
@@ -121,7 +122,7 @@ export default function TeacherHomeworkDetailPage() {
       </div>
 
       <Card>
-        <CardContent className="pt-5 space-y-3">
+        <CardContent className="pt-5 space-y-4">
           <div className="flex items-start justify-between gap-3">
             <div className="flex items-start gap-3">
               <div className="h-10 w-10 rounded-xl bg-[#1E3A5F]/10 flex items-center justify-center shrink-0">
@@ -129,92 +130,74 @@ export default function TeacherHomeworkDetailPage() {
               </div>
               <div>
                 <p className="font-semibold">{hw.title}</p>
-                <p className="text-sm text-[var(--muted-foreground)]">{hw.groupName}</p>
+                <p className="text-sm text-[var(--muted-foreground)]">{group?.name ?? "—"}</p>
               </div>
             </div>
-            <Badge variant={hw.status === "ACTIVE" ? "success" : "secondary"}>
-              {hw.status === "ACTIVE" ? "Faol" : "Tugagan"}
+            <Badge variant={isOverdue ? "destructive" : "success"}>
+              {isOverdue ? "Muddati o'tgan" : "Aktiv"}
             </Badge>
           </div>
-          <p className="text-sm text-[var(--foreground)]">{hw.description}</p>
-          <div className="flex items-center gap-1.5 text-sm text-[var(--muted-foreground)]">
-            <Calendar className="h-4 w-4" />
-            Muddat: {formatDate(hw.dueDate)}
-          </div>
-          <div className="space-y-1.5">
-            <div className="flex justify-between text-xs">
-              <span className="text-[var(--muted-foreground)]">Topshirganlar</span>
-              <span className="font-medium">{submittedStudents.length}/{hw.totalStudents}</span>
-            </div>
-            <div className="w-full h-2 bg-[var(--muted)] rounded-full overflow-hidden">
-              <div className={`h-full rounded-full transition-all ${pct >= 80 ? "bg-green-500" : pct >= 50 ? "bg-amber-500" : "bg-red-400"}`}
-                style={{ width: `${pct}%` }} />
-            </div>
+
+          {hw.description && <p className="text-sm leading-relaxed">{hw.description}</p>}
+
+          <div className="flex items-center gap-2 text-sm text-[var(--muted-foreground)]">
+            <Calendar className="h-4 w-4 shrink-0" />
+            <span>Muddat: {formatDate(hw.dueDate)}</span>
           </div>
         </CardContent>
       </Card>
 
-      {submittedStudents.length > 0 && (
+      <div className="grid grid-cols-3 gap-3">
         <Card>
-          <CardHeader>
-            <CardTitle className="text-sm flex items-center gap-2">
-              <CheckCircle className="h-4 w-4 text-green-600" />
-              Topshirganlar ({submittedStudents.length})
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {submittedStudents.map(s => (
-              <div key={s.id} className="flex items-center gap-3 p-3 rounded-xl bg-[var(--muted)]/40 border border-[var(--border)]">
-                <UserAvatar name={s.name} size="sm" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate">{s.name}</p>
-                  {s.submittedAt && <p className="text-xs text-[var(--muted-foreground)]">{formatDate(s.submittedAt)}</p>}
-                </div>
-                {s.status === "GRADED" ? (
-                  <span className="text-sm font-bold text-green-600 shrink-0">{s.grade}/100</span>
-                ) : (
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <input
-                      type="number"
-                      min={0} max={100}
-                      placeholder="Ball"
-                      value={grades[s.id] || ""}
-                      onChange={e => setGrades(prev => ({ ...prev, [s.id]: e.target.value }))}
-                      className="w-16 h-7 px-2 text-xs text-center border border-[var(--border)] rounded-lg bg-[var(--background)] focus:outline-none focus:ring-1 focus:ring-[#1E3A5F]"
-                    />
-                    <button
-                      onClick={() => handleGrade(s.id)}
-                      className="h-7 px-2.5 text-xs rounded-lg bg-[#1E3A5F] text-white hover:bg-[#162d4a] transition-colors"
-                    >
-                      Qo'y
-                    </button>
-                  </div>
-                )}
-              </div>
-            ))}
+          <CardContent className="pt-4 pb-4 text-center">
+            <p className="text-2xl font-bold text-[#1E3A5F]">{totalStudents}</p>
+            <p className="text-xs text-[var(--muted-foreground)] mt-0.5">Jami o'quvchi</p>
           </CardContent>
         </Card>
-      )}
+        <Card>
+          <CardContent className="pt-4 pb-4 text-center">
+            <p className="text-2xl font-bold text-green-600">{submittedCount}</p>
+            <p className="text-xs text-[var(--muted-foreground)] mt-0.5">Topshirdi</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4 pb-4 text-center">
+            <p className="text-2xl font-bold text-amber-500">{Math.max(totalStudents - submittedCount, 0)}</p>
+            <p className="text-xs text-[var(--muted-foreground)] mt-0.5">Topshirmadi</p>
+          </CardContent>
+        </Card>
+      </div>
 
-      {pendingStudents.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm flex items-center gap-2">
-              <Clock className="h-4 w-4 text-amber-500" />
-              Topshirmaganlar ({pendingStudents.length})
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {pendingStudents.map(s => (
-              <div key={s.id} className="flex items-center gap-3 p-3 rounded-xl bg-amber-50/50 border border-amber-200">
-                <UserAvatar name={s.name} size="sm" />
-                <p className="text-sm font-medium flex-1 truncate">{s.name}</p>
-                <XCircle className="h-4 w-4 text-amber-400 shrink-0" />
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-      )}
+      <Card>
+        <CardHeader><CardTitle className="text-sm">Topshirish holati</CardTitle></CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-[var(--muted-foreground)]">Bajarilish foizi</span>
+            <span className="font-bold text-[#1E3A5F]">{pct}%</span>
+          </div>
+          <div className="w-full h-3 bg-[var(--muted)] rounded-full overflow-hidden">
+            <div
+              className={`h-full rounded-full transition-all ${pct >= 80 ? "bg-green-500" : pct >= 50 ? "bg-amber-500" : "bg-red-400"}`}
+              style={{ width: `${pct}%` }}
+            />
+          </div>
+          <div className="flex items-center justify-between text-xs text-[var(--muted-foreground)]">
+            <span className="flex items-center gap-1"><CheckCircle className="h-3.5 w-3.5 text-green-500" />{submittedCount} topshirdi</span>
+            <span className="flex items-center gap-1"><Clock className="h-3.5 w-3.5 text-amber-500" />{Math.max(totalStudents - submittedCount, 0)} kutilmoqda</span>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader><CardTitle className="text-sm">Topshiriqlar</CardTitle></CardHeader>
+        <CardContent>
+          {hw.submissions.length === 0 ? (
+            <p className="text-sm text-[var(--muted-foreground)] py-4 text-center">Hali hech kim topshirmagan</p>
+          ) : (
+            hw.submissions.map((s) => <GradeRow key={s.id} homeworkId={hw.id} submission={s} maxScore={hw.maxScore} />)
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

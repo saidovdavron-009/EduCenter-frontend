@@ -3,6 +3,7 @@ import React from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "react-hot-toast";
 import { useUIStore } from "@/store/uiStore";
+import { ConfirmProvider } from "@/components/ui/confirm-dialog";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -35,7 +36,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
-        {children}
+        <ConfirmProvider>{children}</ConfirmProvider>
         <Toaster
           position="top-right"
           toastOptions={{

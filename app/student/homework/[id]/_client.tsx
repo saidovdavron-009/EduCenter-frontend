@@ -1,37 +1,61 @@
 "use client";
 import React from "react";
 import { useParams, useRouter } from "next/navigation";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Calendar, FileText, CheckCircle, Clock, Send } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatDate } from "@/lib/utils";
+import { useAuthStore } from "@/store/authStore";
+import { homeworkApi } from "@/lib/api";
 import toast from "react-hot-toast";
 
-type HomeworkStatus = "PENDING" | "SUBMITTED" | "GRADED" | "LATE";
+interface Submission {
+  id: string; studentId: string; text: string | null; fileUrl: string | null;
+  score: number | null; feedback: string | null; submittedAt: string; gradedAt: string | null;
+}
+interface HomeworkDetail {
+  id: string; groupId: string; title: string; description: string | null; dueDate: string; maxScore: number; submissions: Submission[];
+}
 
-const allHomework = [
-  { id: "1", title: "Present Simple mashqlari", group: "Ingliz tili A2", teacher: "Aziz Karimov", dueDate: "2025-01-28", description: "Darslikdan 1-50 mashqlarni bajaring va daftaringizga yozing. Har bir mashq uchun qoida ham yozing.", status: "PENDING" as HomeworkStatus, grade: undefined, maxGrade: 100 },
-  { id: "2", title: "Reading comprehension", group: "Ingliz tili A2", teacher: "Aziz Karimov", dueDate: "2025-01-29", description: "Unit 5 matnini o'qib, savollarni javoblang. Matn kitobning 78-betida.", status: "SUBMITTED" as HomeworkStatus, grade: undefined, maxGrade: 100, submittedAnswer: "Matnni o'qidim va barcha savollarga javob yozdim..." },
-  { id: "3", title: "Vocabulary list", group: "Ingliz tili A2", teacher: "Aziz Karimov", dueDate: "2025-01-22", description: "100 ta yangi so'zni yodlang va har biridan jumla tuzing.", status: "GRADED" as HomeworkStatus, grade: 92, maxGrade: 100, submittedAnswer: "So'zlarni yodladim va jumlalar tuzdum...", feedback: "Juda yaxshi ish! Bir nechta so'z noto'g'ri yozilgan." },
-  { id: "4", title: "Speaking practice", group: "Speaking Club", teacher: "Aziz Karimov", dueDate: "2025-01-30", description: "O'zingiz haqingizda 2 daqiqalik nutq tayyorlang. Ism, yosh, sevimli mashg'ulot haqida gapirib bering.", status: "PENDING" as HomeworkStatus, grade: undefined, maxGrade: 100 },
-  { id: "5", title: "Grammar test preparation", group: "Ingliz tili A2", teacher: "Aziz Karimov", dueDate: "2025-01-20", description: "Test uchun grammatika qoidalarini takrorlang.", status: "GRADED" as HomeworkStatus, grade: 78, maxGrade: 100, submittedAnswer: "Qoidalarni takrorladim...", feedback: "Yaxshi, lekin Present Perfect qoidasini yana o'rganing." },
-];
-
-const statusConfig: Record<HomeworkStatus, { label: string; variant: string }> = {
-  PENDING:   { label: "Bajarilmagan", variant: "secondary" },
-  SUBMITTED: { label: "Topshirildi",  variant: "info" },
-  GRADED:    { label: "Baholandi",    variant: "success" },
-  LATE:      { label: "Kech topshirildi", variant: "warning" },
-};
+function extractErrorMessage(error: unknown): string {
+  const data = (error as { response?: { data?: { message?: string | string[] } } })?.response?.data;
+  if (Array.isArray(data?.message)) return data.message[0];
+  return data?.message || "Xatolik yuz berdi";
+}
 
 export default function StudentHomeworkDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
-
-  const hw = allHomework.find(h => h.id === id);
+  const queryClient = useQueryClient();
+  const { user } = useAuthStore();
+  const studentId = user?.profile?.id;
   const [answer, setAnswer] = React.useState("");
-  const [submitted, setSubmitted] = React.useState(hw?.status === "SUBMITTED" || hw?.status === "GRADED");
+
+  const { data: hw, isLoading } = useQuery({
+    queryKey: ["homework", id],
+    queryFn: () => homeworkApi.getById(id as string).then((r) => r.data as HomeworkDetail),
+  });
+
+  const mySubmission = hw?.submissions.find((s) => s.studentId === studentId);
+
+  React.useEffect(() => {
+    if (mySubmission?.text) setAnswer(mySubmission.text);
+  }, [mySubmission?.text]);
+
+  const submitMutation = useMutation({
+    mutationFn: () => homeworkApi.submit(id as string, { text: answer }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["homework", id] });
+      toast.success("Vazifa topshirildi!");
+    },
+    onError: (e) => toast.error(extractErrorMessage(e)),
+  });
+
+  if (isLoading) {
+    return <div className="max-w-2xl space-y-4"><div className="h-40 bg-[var(--muted)] rounded-xl animate-pulse" /></div>;
+  }
 
   if (!hw) {
     return (
@@ -42,13 +66,15 @@ export default function StudentHomeworkDetailPage() {
     );
   }
 
-  const cfg = statusConfig[hw.status];
+  const isGraded = mySubmission?.score != null;
+  const isSubmitted = !!mySubmission;
   const isOverdue = new Date(hw.dueDate) < new Date();
+  const status = isGraded ? "Baholandi" : isSubmitted ? "Topshirildi" : "Bajarilmagan";
+  const statusVariant = isGraded ? "success" : isSubmitted ? "info" : "secondary";
 
   const handleSubmit = () => {
     if (!answer.trim()) { toast.error("Javobingizni yozing"); return; }
-    setSubmitted(true);
-    toast.success("Vazifa topshirildi!");
+    submitMutation.mutate();
   };
 
   return (
@@ -69,45 +95,42 @@ export default function StudentHomeworkDetailPage() {
               </div>
               <div>
                 <p className="font-semibold">{hw.title}</p>
-                <p className="text-sm text-[var(--muted-foreground)]">{hw.group} • {hw.teacher}</p>
               </div>
             </div>
-            <Badge variant={cfg.variant as any}>{cfg.label}</Badge>
+            <Badge variant={statusVariant}>{status}</Badge>
           </div>
 
-          <p className="text-sm text-[var(--foreground)] leading-relaxed">{hw.description}</p>
+          {hw.description && <p className="text-sm text-[var(--foreground)] leading-relaxed">{hw.description}</p>}
 
           <div className="flex items-center gap-4 text-sm text-[var(--muted-foreground)]">
             <span className="flex items-center gap-1.5">
               <Calendar className="h-4 w-4" />
               Muddat: {formatDate(hw.dueDate)}
             </span>
-            {isOverdue && hw.status === "PENDING" && (
+            {isOverdue && !isSubmitted && (
               <span className="text-red-500 font-medium flex items-center gap-1">
                 <Clock className="h-4 w-4" />Muddati o'tgan
               </span>
             )}
           </div>
 
-          {hw.status === "GRADED" && hw.grade !== undefined && (
+          {isGraded && (
             <div className="flex items-center gap-3 p-3 bg-green-50 rounded-xl border border-green-200">
               <CheckCircle className="h-5 w-5 text-green-600 shrink-0" />
               <div>
-                <p className="text-sm font-semibold text-green-700">Ball: {hw.grade}/{hw.maxGrade}</p>
-                {(hw as any).feedback && <p className="text-xs text-green-600 mt-0.5">{(hw as any).feedback}</p>}
+                <p className="text-sm font-semibold text-green-700">Ball: {mySubmission!.score}/{hw.maxScore}</p>
+                {mySubmission!.feedback && <p className="text-xs text-green-600 mt-0.5">{mySubmission!.feedback}</p>}
               </div>
             </div>
           )}
         </CardContent>
       </Card>
 
-      {(hw.status === "SUBMITTED" || hw.status === "GRADED" || submitted) ? (
+      {isSubmitted ? (
         <Card>
           <CardHeader><CardTitle className="text-sm">Topshirilgan javob</CardTitle></CardHeader>
           <CardContent>
-            <p className="text-sm text-[var(--muted-foreground)] italic">
-              {(hw as any).submittedAnswer || answer || "Javob topshirildi"}
-            </p>
+            <p className="text-sm text-[var(--muted-foreground)] italic">{mySubmission!.text || "Javob topshirildi"}</p>
           </CardContent>
         </Card>
       ) : (
@@ -116,13 +139,13 @@ export default function StudentHomeworkDetailPage() {
           <CardContent className="space-y-3">
             <textarea
               value={answer}
-              onChange={e => setAnswer(e.target.value)}
+              onChange={(e) => setAnswer(e.target.value)}
               placeholder="Vazifani bajardim, bu yerga javobingizni yozing..."
               rows={5}
               className="w-full px-3 py-2.5 rounded-xl border border-[var(--border)] bg-[var(--background)] text-sm resize-none focus:outline-none focus:ring-2 focus:ring-[#1E3A5F]"
             />
             <div className="flex justify-end">
-              <Button onClick={handleSubmit}>
+              <Button onClick={handleSubmit} loading={submitMutation.isPending}>
                 <Send className="h-4 w-4" />Topshirish
               </Button>
             </div>

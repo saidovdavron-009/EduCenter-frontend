@@ -1,5 +1,6 @@
 "use client";
 import React from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   Users, GraduationCap, BookOpen, CreditCard, ClipboardCheck,
 } from "lucide-react";
@@ -12,36 +13,35 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { UserAvatar } from "@/components/ui/avatar";
 import { formatCurrency, formatDate, getStatusColor, getStatusLabel } from "@/lib/utils";
+import { reportsApi, studentsApi, paymentsApi } from "@/lib/api";
+import type { DashboardStats, RevenueData, AttendanceStats } from "@/types";
 
-const mockRevenueData = [
-  { month: "Yan", revenue: 15000000, profit: 7000000 },
-  { month: "Fev", revenue: 18000000, profit: 9000000 },
-  { month: "Mar", revenue: 22000000, profit: 12000000 },
-  { month: "Apr", revenue: 20000000, profit: 10500000 },
-  { month: "May", revenue: 25000000, profit: 14000000 },
-  { month: "Iyn", revenue: 23000000, profit: 12500000 },
-];
+interface RecentStudent {
+  id: string; fullName: string; phone: string; status: string; createdAt: string;
+}
 
-const mockAttendanceData = [
-  { name: "Keldi", value: 78, color: "#22c55e" },
-  { name: "Kelmadi", value: 12, color: "#ef4444" },
-  { name: "Kech", value: 7, color: "#f59e0b" },
-  { name: "Sababli", value: 3, color: "#8b5cf6" },
-];
+interface RecentPayment {
+  id: string; studentName: string; amount: number; method: string; status: string; paidAt: string | null;
+}
 
-const mockRecentStudents = [
-  { id: "1", fullName: "Alibek Karimov", phone: "+998 90 123 45 67", status: "ACTIVE", createdAt: "2025-01-15" },
-  { id: "2", fullName: "Malika Toshmatova", phone: "+998 91 234 56 78", status: "ACTIVE", createdAt: "2025-01-14" },
-  { id: "3", fullName: "Jasur Yusupov", phone: "+998 93 345 67 89", status: "FROZEN", createdAt: "2025-01-13" },
-  { id: "4", fullName: "Zulfiya Abdullayeva", phone: "+998 94 456 78 90", status: "ACTIVE", createdAt: "2025-01-12" },
-];
+const placeholderStats: DashboardStats = {
+  totalStudents: 0, activeStudents: 0, totalTeachers: 0, totalGroups: 0,
+  monthlyRevenue: 0, pendingPayments: 0, todayAttendanceRate: 0, totalAttendanceRate: 0,
+};
 
-const mockRecentPayments = [
-  { id: "1", studentName: "Alibek Karimov", amount: 500000, method: "CLICK", status: "PAID", paidAt: "2025-01-15" },
-  { id: "2", studentName: "Malika Toshmatova", amount: 600000, method: "PAYME", status: "PAID", paidAt: "2025-01-14" },
-  { id: "3", studentName: "Jasur Yusupov", amount: 500000, method: "CASH", status: "PENDING", paidAt: null },
-  { id: "4", studentName: "Bobur Nazarov", amount: 500000, method: "CASH", status: "OVERDUE", paidAt: null },
-];
+const ATTENDANCE_COLORS: Record<string, string> = {
+  Keldi: "#22c55e", Kelmadi: "#ef4444", Kech: "#f59e0b", Sababli: "#8b5cf6",
+};
+
+function toAttendancePie(stats?: AttendanceStats) {
+  if (!stats) return [];
+  return [
+    { name: "Keldi", value: stats.present },
+    { name: "Kelmadi", value: stats.absent },
+    { name: "Kech", value: stats.late },
+    { name: "Sababli", value: stats.excused },
+  ];
+}
 
 const CustomTooltip = ({ active, payload, label }: { active?: boolean; payload?: Array<{ name: string; value: number; color: string }>; label?: string }) => {
   if (active && payload?.length) {
@@ -60,11 +60,42 @@ const CustomTooltip = ({ active, payload, label }: { active?: boolean; payload?:
 };
 
 export default function AdminDashboardPage() {
+  const { data: stats } = useQuery({
+    queryKey: ["dashboard-stats"],
+    queryFn: () => reportsApi.getDashboardStats().then((r) => r.data as DashboardStats),
+    placeholderData: placeholderStats,
+  });
+
+  const { data: revenueData } = useQuery({
+    queryKey: ["dashboard-revenue"],
+    queryFn: () => reportsApi.getRevenue().then((r) => r.data as RevenueData[]),
+    placeholderData: [] as RevenueData[],
+  });
+
+  const { data: attendanceStats } = useQuery({
+    queryKey: ["dashboard-attendance"],
+    queryFn: () => reportsApi.getAttendanceReport().then((r) => r.data as AttendanceStats),
+  });
+
+  const { data: recentStudentsRes } = useQuery({
+    queryKey: ["dashboard-recent-students"],
+    queryFn: () => studentsApi.getAll({ limit: 4 }).then((r) => r.data as { data: RecentStudent[] }),
+  });
+
+  const { data: recentPaymentsRes } = useQuery({
+    queryKey: ["dashboard-recent-payments"],
+    queryFn: () => paymentsApi.getAll({ limit: 4 }).then((r) => r.data as { data: RecentPayment[] }),
+  });
+
+  const recentStudents = recentStudentsRes?.data ?? [];
+  const recentPayments = recentPaymentsRes?.data ?? [];
+  const attendancePie = toAttendancePie(attendanceStats);
+
   return (
     <div className="space-y-4 sm:space-y-6">
       <div>
-        <h1 className="text-xl sm:text-xl sm:text-2xl font-bold text-[var(--foreground)]">Dashboard</h1>
-        <p className="text-xs sm:text-sm text-[var(--muted-foreground)] mt-1">
+        <h1 className="text-xl sm:text-2xl font-bold text-[var(--foreground)]">Dashboard</h1>
+        <p className="text-xs sm:text-sm text-[var(--muted-foreground)] mt-1" suppressHydrationWarning>
           {new Date().toLocaleDateString("uz-UZ", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}
         </p>
       </div>
@@ -73,31 +104,29 @@ export default function AdminDashboardPage() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4">
         <StatCard
           title="Jami o'quvchilar"
-          value={247}
-          subtitle="228 aktiv"
+          value={stats?.totalStudents ?? 0}
+          subtitle={`${stats?.activeStudents ?? 0} aktiv`}
           icon={<Users className="h-5 w-5" />}
           iconBg="bg-blue-100"
-          trend={{ value: 8, label: "o'tgan oydan" }}
         />
         <StatCard
           title="O'qituvchilar"
-          value={18}
-          subtitle="24 guruh"
+          value={stats?.totalTeachers ?? 0}
+          subtitle={`${stats?.totalGroups ?? 0} guruh`}
           icon={<GraduationCap className="h-5 w-5" />}
           iconBg="bg-purple-100"
         />
         <StatCard
           title="Oylik daromad"
-          value={formatCurrency(25000000)}
-          subtitle="12 ta kutilmoqda"
+          value={formatCurrency(stats?.monthlyRevenue ?? 0)}
+          subtitle={`${formatCurrency(stats?.pendingPayments ?? 0)} kutilmoqda`}
           icon={<CreditCard className="h-5 w-5" />}
           iconBg="bg-green-100"
-          trend={{ value: 12, label: "o'tgan oydan" }}
         />
         <StatCard
           title="Davomat bugun"
-          value="89%"
-          subtitle="O'rtacha: 87%"
+          value={`${stats?.todayAttendanceRate ?? 0}%`}
+          subtitle={`O'rtacha: ${stats?.totalAttendanceRate ?? 0}%`}
           icon={<ClipboardCheck className="h-5 w-5" />}
           iconBg="bg-amber-100"
         />
@@ -110,12 +139,12 @@ export default function AdminDashboardPage() {
           <CardHeader>
             <div className="flex items-center justify-between">
               <CardTitle className="text-sm sm:text-base">Daromad dinamikasi</CardTitle>
-              <Badge variant="success">2025</Badge>
+              <Badge variant="success">{new Date().getFullYear()}</Badge>
             </div>
           </CardHeader>
           <CardContent className="px-2 sm:px-5">
             <ResponsiveContainer width="100%" height={180}>
-              <AreaChart data={mockRevenueData}>
+              <AreaChart data={revenueData}>
                 <defs>
                   <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="#1E3A5F" stopOpacity={0.3} />
@@ -147,14 +176,14 @@ export default function AdminDashboardPage() {
             <ResponsiveContainer width="100%" height={180}>
               <PieChart>
                 <Pie
-                  data={mockAttendanceData}
+                  data={attendancePie}
                   innerRadius={45}
                   outerRadius={70}
                   paddingAngle={3}
                   dataKey="value"
                 >
-                  {mockAttendanceData.map((entry, index) => (
-                    <Cell key={index} fill={entry.color} />
+                  {attendancePie.map((entry) => (
+                    <Cell key={entry.name} fill={ATTENDANCE_COLORS[entry.name]} />
                   ))}
                 </Pie>
                 <Tooltip formatter={(value) => [`${value}%`, ""]} />
@@ -177,7 +206,7 @@ export default function AdminDashboardPage() {
           </CardHeader>
           <CardContent className="p-0">
             <div className="divide-y divide-[var(--border)]">
-              {mockRecentStudents.map((student) => (
+              {recentStudents.map((student) => (
                 <div key={student.id} className="flex items-center gap-2 sm:gap-3 px-3 sm:px-5 py-2.5 sm:py-3">
                   <UserAvatar name={student.fullName} size="sm" />
                   <div className="flex-1 min-w-0">
@@ -206,7 +235,7 @@ export default function AdminDashboardPage() {
           </CardHeader>
           <CardContent className="p-0">
             <div className="divide-y divide-[var(--border)]">
-              {mockRecentPayments.map((payment) => (
+              {recentPayments.map((payment) => (
                 <div key={payment.id} className="flex items-center gap-2 sm:gap-3 px-3 sm:px-5 py-2.5 sm:py-3">
                   <div className="flex h-8 w-8 sm:h-9 sm:w-9 shrink-0 items-center justify-center rounded-full bg-[var(--muted)]">
                     <CreditCard className="h-4 w-4 text-[var(--muted-foreground)]" />

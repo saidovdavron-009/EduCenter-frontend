@@ -1,46 +1,26 @@
 "use client";
 import React from "react";
 import { useRouter } from "next/navigation";
-import { Pencil, X, Check, Eye, EyeOff, LogOut, Upload } from "lucide-react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Pencil, X, Check, Eye, EyeOff, LogOut, Camera } from "lucide-react";
 import { useAuthStore } from "@/store/authStore";
 import { UserAvatar } from "@/components/ui/avatar";
+import { studentsApi, authApi, uploadsApi } from "@/lib/api";
+import { formatDate } from "@/lib/utils";
 import toast from "react-hot-toast";
 
-function genPassword(seed: number) {
-  const chars = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
-  let result = "";
-  let n = seed * 9301 + 49297;
-  for (let i = 0; i < 8; i++) {
-    n = (n * 9301 + 49297) % 233280;
-    result += chars[n % chars.length];
-  }
-  return result;
+interface StudentDetail {
+  fullName: string; phone: string; dob: string | null; gender: "MALE" | "FEMALE" | null; address: string | null; loginId: string | null;
+  groups: { id: string; name: string; subject_name: string | null; teacher_name: string | null }[];
 }
 
-const myGroups = [
-  { name: "Ingliz tili A2", teacher: "Aziz Karimov", schedule: "Du, Ch, Ju 09:00–11:00", fee: "500 000 so'm/oy" },
-  { name: "Speaking Club", teacher: "Aziz Karimov", schedule: "Se, Pa 14:00–16:00", fee: "400 000 so'm/oy" },
-];
-
-interface FieldRowProps {
-  label: string;
-  value: string;
-}
-function FieldRow({ label, value }: FieldRowProps) {
-  return (
-    <div>
-      <p className="text-xs text-[var(--muted-foreground)] mb-0.5">{label}</p>
-      <p className="text-sm font-semibold text-[var(--foreground)]">{value || "—"}</p>
-    </div>
-  );
+function extractErrorMessage(error: unknown): string {
+  const data = (error as { response?: { data?: { message?: string | string[] } } })?.response?.data;
+  if (Array.isArray(data?.message)) return data.message[0];
+  return data?.message || "Xatolik yuz berdi";
 }
 
-interface InfoCardProps {
-  title: string;
-  value: string;
-  onEdit?: () => void;
-  masked?: boolean;
-}
+interface InfoCardProps { title: string; value: string; onEdit?: () => void; masked?: boolean; }
 function InfoCard({ title, value, onEdit, masked }: InfoCardProps) {
   const [show, setShow] = React.useState(false);
   return (
@@ -49,7 +29,7 @@ function InfoCard({ title, value, onEdit, masked }: InfoCardProps) {
         <p className="text-sm font-semibold text-[var(--foreground)]">{title}</p>
         <div className="flex items-center gap-1">
           {masked && (
-            <button onClick={() => setShow(v => !v)} className="p-1 rounded-lg hover:bg-[var(--muted)] text-[var(--muted-foreground)] transition-colors">
+            <button onClick={() => setShow((v) => !v)} className="p-1 rounded-lg hover:bg-[var(--muted)] text-[var(--muted-foreground)] transition-colors">
               {show ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
             </button>
           )}
@@ -60,45 +40,42 @@ function InfoCard({ title, value, onEdit, masked }: InfoCardProps) {
           )}
         </div>
       </div>
-      <p className="text-sm font-mono text-[var(--foreground)]">
-        {masked && !show ? "••••••••" : value}
-      </p>
+      <p className="text-sm font-mono text-[var(--foreground)]">{masked && !show ? "••••••••" : value}</p>
     </div>
   );
 }
 
 export default function StudentProfilePage() {
-  const { user, logout } = useAuthStore();
+  const queryClient = useQueryClient();
+  const { user, setUser, logout } = useAuthStore();
   const router = useRouter();
-
-  const [imageUrl, setImageUrl] = React.useState<string | null>(null);
+  const studentId = user?.profile?.id;
   const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = React.useState(false);
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (!["image/jpeg", "image/jpg", "image/png"].includes(file.type)) {
-      toast.error("Faqat JPEG, JPG yoki PNG formatlar"); return;
+    if (!["image/jpeg", "image/jpg", "image/png"].includes(file.type)) { toast.error("Faqat JPEG, JPG yoki PNG formatlar"); return; }
+    if (file.size > 2 * 1024 * 1024) { toast.error("Fayl hajmi 2MB dan oshmasin"); return; }
+    setUploading(true);
+    try {
+      const { data } = await uploadsApi.uploadAvatar(file);
+      await authApi.updateAvatar(data.url);
+      if (user) setUser({ ...user, avatarUrl: data.url });
+      toast.success("Rasm yuklandi");
+    } catch (err) {
+      toast.error(extractErrorMessage(err));
+    } finally {
+      setUploading(false);
+      e.target.value = "";
     }
-    if (file.size > 2 * 1024 * 1024) {
-      toast.error("Fayl hajmi 2MB dan oshmasin"); return;
-    }
-    setImageUrl(URL.createObjectURL(file));
-    toast.success("Rasm yuklandi");
   };
 
-  const loginStr = user?.email || "ID001";
-  const studentId = /^id\d+$/i.test(loginStr) ? loginStr.toUpperCase() : "ID001";
-  const numericId = parseInt(studentId.replace("ID", "")) || 1;
-  const generatedPassword = genPassword(numericId);
-
-  const [info, setInfo] = React.useState({
-    firstName: user?.profile?.fullName?.split(" ")[0] || "Alibek",
-    lastName: user?.profile?.fullName?.split(" ")[1] || "Karimov",
-    phone: "+998 90 123 45 67",
-    dob: "15.03.2005",
-    gender: "Erkak",
-    address: "Toshkent sh., Yunusobod",
+  const { data: student } = useQuery({
+    queryKey: ["my-student-full-profile", studentId],
+    queryFn: () => studentsApi.getById(studentId as string).then((r) => r.data as StudentDetail),
+    enabled: !!studentId,
   });
 
   const [editField, setEditField] = React.useState<string | null>(null);
@@ -107,143 +84,135 @@ export default function StudentProfilePage() {
   const [passwords, setPasswords] = React.useState({ old: "", new: "", confirm: "" });
   const [showPw, setShowPw] = React.useState({ old: false, new: false, confirm: false });
 
-  const fieldLabels: Record<string, string> = {
-    firstName: "Ism", lastName: "Familiya", phone: "Telefon raqam",
-    dob: "Tug'ilgan sana", gender: "Jinsi", address: "Manzil",
-  };
+  const fieldLabels: Record<string, string> = { fullName: "F.I.O", phone: "Telefon raqam", dob: "Tug'ilgan sana", gender: "Jinsi", address: "Manzil" };
+
+  const updateMutation = useMutation({
+    mutationFn: (data: Record<string, unknown>) => studentsApi.update(studentId as string, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["my-student-full-profile", studentId] });
+      toast.success("Saqlandi");
+      setEditField(null);
+    },
+    onError: (e) => toast.error(extractErrorMessage(e)),
+  });
+
+  const info = student ? {
+    fullName: student.fullName,
+    phone: student.phone,
+    dob: student.dob ? student.dob.slice(0, 10) : "",
+    gender: student.gender === "MALE" ? "Erkak" : student.gender === "FEMALE" ? "Ayol" : "",
+    address: student.address ?? "",
+  } : null;
 
   const startEdit = (field: string) => {
     setEditField(field);
-    setEditVal(info[field as keyof typeof info]);
+    setEditVal(info ? String(info[field as keyof typeof info] ?? "") : "");
   };
 
   const saveEdit = () => {
-    if (editField) {
-      setInfo(prev => ({ ...prev, [editField]: editVal }));
-      toast.success("Saqlandi");
+    if (!editField) return;
+    if (editField === "gender") {
+      updateMutation.mutate({ gender: editVal === "Erkak" ? "MALE" : editVal === "Ayol" ? "FEMALE" : undefined });
+      return;
     }
-    setEditField(null);
+    if (editField === "dob") {
+      updateMutation.mutate({ dob: editVal || undefined });
+      return;
+    }
+    updateMutation.mutate({ [editField]: editVal });
   };
+
+  const changePasswordMutation = useMutation({
+    mutationFn: () => authApi.changePassword({ currentPassword: passwords.old, newPassword: passwords.new }),
+    onSuccess: () => {
+      toast.success("Parol o'zgartirildi");
+      setPasswords({ old: "", new: "", confirm: "" });
+      setShowPassModal(false);
+    },
+    onError: (e) => toast.error(extractErrorMessage(e)),
+  });
 
   const handleChangePassword = () => {
     if (!passwords.old) { toast.error("Joriy parolni kiriting"); return; }
-    if (passwords.new.length < 6) { toast.error("Yangi parol kamida 6 ta belgi"); return; }
+    if (passwords.new.length < 8) { toast.error("Yangi parol kamida 8 ta belgi"); return; }
     if (passwords.new !== passwords.confirm) { toast.error("Parollar mos kelmadi"); return; }
-    toast.success("Parol o'zgartirildi");
-    setPasswords({ old: "", new: "", confirm: "" });
-    setShowPassModal(false);
+    changePasswordMutation.mutate();
   };
 
   return (
     <div className="space-y-4 sm:space-y-5 max-w-4xl">
-      {/* Personal info section */}
       <div className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-4 sm:p-6">
         <h2 className="text-base font-bold mb-4 sm:mb-5">Shaxsiy ma'lumotlar</h2>
-
         <div className="flex flex-col sm:flex-row gap-5 sm:gap-8">
-          {/* Photo area */}
-          <div className="flex items-start gap-4 shrink-0">
-            <input ref={fileInputRef} type="file" accept=".jpg,.jpeg,.png" className="hidden" onChange={handleFileChange} />
-            <div className="flex flex-col items-center gap-1">
+          <div className="flex flex-col items-center gap-1 shrink-0">
+            <input ref={fileInputRef} type="file" accept=".jpg,.jpeg,.png" className="hidden" onChange={handleAvatarChange} />
+            <div className="relative">
+              <UserAvatar name={student?.fullName || "O'quvchi"} avatarUrl={user?.avatarUrl ?? undefined} size="xl" className="h-20 w-20 sm:h-24 sm:w-24 rounded-xl" />
               <button
                 onClick={() => fileInputRef.current?.click()}
-                className="h-20 w-20 sm:h-24 sm:w-24 rounded-xl border-2 border-dashed border-[var(--border)] flex items-center justify-center bg-[var(--muted)] hover:border-[#1E3A5F] hover:bg-[#1E3A5F]/5 transition-colors overflow-hidden relative group"
+                disabled={uploading}
+                className="absolute bottom-0 right-0 h-7 w-7 rounded-full bg-[#1E3A5F] text-white flex items-center justify-center shadow-lg hover:bg-[#162d4a] transition-colors disabled:opacity-50"
               >
-                <svg viewBox="0 0 96 96" className="w-full h-full" xmlns="http://www.w3.org/2000/svg">
-                  <rect width="96" height="96" fill="#e5e7eb" />
-                  <circle cx="48" cy="36" r="18" fill="#9ca3af" />
-                  <ellipse cx="48" cy="82" rx="28" ry="20" fill="#9ca3af" />
-                </svg>
-                <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <Upload className="h-5 w-5 text-white" />
-                  <p className="text-[9px] text-white mt-0.5 font-medium">Yuklash</p>
-                </div>
-              </button>
-              <p className="text-[9px] text-[var(--muted-foreground)] text-center max-w-[80px] leading-tight">
-                500x500 JPEG, JPG, PNG maks 2MB
-              </p>
-            </div>
-            <div className="flex flex-col items-center gap-1">
-              <div className="h-20 w-20 sm:h-24 sm:w-24 rounded-xl overflow-hidden border border-[var(--border)] relative">
-                {imageUrl ? (
-                  <img src={imageUrl} alt="Profil" className="w-full h-full object-cover" />
-                ) : (
-                  <UserAvatar name={`${info.firstName} ${info.lastName}`} size="xl" className="w-full h-full rounded-xl" />
-                )}
-                <div className="absolute bottom-0 inset-x-0 bg-green-500 text-white text-[9px] font-semibold text-center py-0.5">
-                  Talabga mos
-                </div>
-              </div>
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                className="text-[10px] text-[#1E3A5F] hover:underline font-medium"
-              >
-                Rasm yuklash
+                <Camera className="h-3.5 w-3.5" />
               </button>
             </div>
           </div>
 
-          {/* Info grid */}
-          <div className="flex-1 grid grid-cols-2 gap-x-8 gap-y-4">
-            {(Object.keys(info) as Array<keyof typeof info>).map(field => (
-              <div key={field} className="min-w-0">
-                <p className="text-xs text-[var(--muted-foreground)] mb-0.5">{fieldLabels[field]}</p>
-                {editField === field ? (
-                  <div className="flex items-center gap-1">
-                    <input
-                      value={editVal}
-                      onChange={e => setEditVal(e.target.value)}
-                      autoFocus
-                      className="flex-1 min-w-0 h-7 px-2 text-sm border border-[#1E3A5F] rounded-lg outline-none bg-[var(--background)]"
-                    />
-                    <button onClick={saveEdit} className="p-1 text-green-600 hover:bg-green-50 rounded"><Check className="h-3.5 w-3.5" /></button>
-                    <button onClick={() => setEditField(null)} className="p-1 text-red-500 hover:bg-red-50 rounded"><X className="h-3.5 w-3.5" /></button>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-1 group">
-                    <p className="text-sm font-semibold truncate">{info[field] || "—"}</p>
-                    <button onClick={() => startEdit(field)} className="opacity-0 group-hover:opacity-100 p-0.5 text-[var(--muted-foreground)] hover:text-[#1E3A5F] transition-all">
-                      <Pencil className="h-3 w-3" />
-                    </button>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
+          {info && (
+            <div className="flex-1 grid grid-cols-2 gap-x-8 gap-y-4">
+              {(Object.keys(info) as Array<keyof typeof info>).map((field) => (
+                <div key={field} className="min-w-0">
+                  <p className="text-xs text-[var(--muted-foreground)] mb-0.5">{fieldLabels[field]}</p>
+                  {editField === field ? (
+                    <div className="flex items-center gap-1">
+                      <input
+                        value={editVal}
+                        onChange={(e) => setEditVal(e.target.value)}
+                        autoFocus
+                        type={field === "dob" ? "date" : "text"}
+                        className="flex-1 min-w-0 h-7 px-2 text-sm border border-[#1E3A5F] rounded-lg outline-none bg-[var(--background)]"
+                      />
+                      <button onClick={saveEdit} className="p-1 text-green-600 hover:bg-green-50 rounded"><Check className="h-3.5 w-3.5" /></button>
+                      <button onClick={() => setEditField(null)} className="p-1 text-red-500 hover:bg-red-50 rounded"><X className="h-3.5 w-3.5" /></button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1 group">
+                      <p className="text-sm font-semibold truncate">{(field === "dob" && info[field]) ? formatDate(info[field]) : (info[field] || "—")}</p>
+                      <button onClick={() => startEdit(field)} className="opacity-0 group-hover:opacity-100 p-0.5 text-[var(--muted-foreground)] hover:text-[#1E3A5F] transition-all">
+                        <Pencil className="h-3 w-3" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Credential cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <InfoCard title="Kirish (Login)" value={studentId} />
-        <InfoCard title="Parol" value={generatedPassword} masked onEdit={() => setShowPassModal(true)} />
+        <InfoCard title="Kirish (ID)" value={student?.loginId ?? user?.loginId ?? "—"} />
+        <InfoCard title="Parol" value="password123" masked onEdit={() => setShowPassModal(true)} />
         <div className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-4 flex flex-col gap-2">
-          <div className="flex items-center justify-between">
-            <p className="text-sm font-semibold">Bildirishnomalar</p>
-            <button className="p-1 rounded-lg hover:bg-[var(--muted)] text-[var(--muted-foreground)]">
-              <Pencil className="h-3.5 w-3.5" />
-            </button>
-          </div>
+          <p className="text-sm font-semibold">Bildirishnomalar</p>
           <p className="text-sm text-[var(--muted-foreground)]">SMS va email orqali</p>
         </div>
       </div>
 
-      {/* Groups */}
       <div className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-4 sm:p-6">
         <h2 className="text-base font-bold mb-4">Guruhlarim</h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {myGroups.map((g, i) => (
-            <div key={i} className="border border-[var(--border)] rounded-xl p-4 bg-[var(--muted)]/30">
+          {(student?.groups ?? []).map((g) => (
+            <div key={g.id} className="border border-[var(--border)] rounded-xl p-4 bg-[var(--muted)]/30">
               <p className="font-semibold text-sm">{g.name}</p>
-              <p className="text-xs text-[var(--muted-foreground)] mt-1">{g.teacher}</p>
-              <p className="text-xs text-[var(--muted-foreground)]">{g.schedule}</p>
-              <p className="text-xs font-medium text-[#1E3A5F] mt-2">{g.fee}</p>
+              <p className="text-xs text-[var(--muted-foreground)] mt-1">{g.subject_name ?? "—"}</p>
+              <p className="text-xs text-[var(--muted-foreground)]">{g.teacher_name ?? "—"}</p>
             </div>
           ))}
+          {(!student?.groups || student.groups.length === 0) && <p className="text-sm text-[var(--muted-foreground)] col-span-2 text-center py-4">Guruhlar yo'q</p>}
         </div>
       </div>
 
-      {/* Logout */}
       <div className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-4 sm:p-5 flex items-center justify-between">
         <div>
           <p className="text-sm font-semibold">Tizimdan chiqish</p>
@@ -257,7 +226,6 @@ export default function StudentProfilePage() {
         </button>
       </div>
 
-      {/* Password modal */}
       {showPassModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="bg-[var(--card)] rounded-2xl shadow-xl w-full max-w-sm p-6">
@@ -266,7 +234,7 @@ export default function StudentProfilePage() {
               <button onClick={() => setShowPassModal(false)} className="p-1.5 rounded-lg hover:bg-[var(--muted)]"><X className="h-4 w-4" /></button>
             </div>
             <div className="space-y-3">
-              {(["old", "new", "confirm"] as const).map(k => (
+              {(["old", "new", "confirm"] as const).map((k) => (
                 <div key={k}>
                   <label className="text-xs font-medium text-[var(--muted-foreground)] block mb-1">
                     {k === "old" ? "Joriy parol" : k === "new" ? "Yangi parol" : "Tasdiqlash"}
@@ -275,11 +243,11 @@ export default function StudentProfilePage() {
                     <input
                       type={showPw[k] ? "text" : "password"}
                       value={passwords[k]}
-                      onChange={e => setPasswords(p => ({ ...p, [k]: e.target.value }))}
+                      onChange={(e) => setPasswords((p) => ({ ...p, [k]: e.target.value }))}
                       placeholder="••••••••"
                       className="w-full h-10 pl-3 pr-9 rounded-xl border border-[var(--border)] bg-[var(--background)] text-sm focus:outline-none focus:ring-2 focus:ring-[#1E3A5F]"
                     />
-                    <button type="button" onClick={() => setShowPw(p => ({ ...p, [k]: !p[k] }))}
+                    <button type="button" onClick={() => setShowPw((p) => ({ ...p, [k]: !p[k] }))}
                       className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--muted-foreground)]">
                       {showPw[k] ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                     </button>

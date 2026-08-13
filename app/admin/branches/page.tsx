@@ -1,55 +1,105 @@
 "use client";
 import React from "react";
-import { Plus, Building2, Phone, MapPin, Pencil, Trash2, X, Check } from "lucide-react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Plus, Building2, Phone, MapPin, Pencil, Trash2 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Modal, ModalHeader, ModalTitle, ModalFooter } from "@/components/ui/modal";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { branchesApi, teachersApi } from "@/lib/api";
 import toast from "react-hot-toast";
 
 interface Branch {
-  id: number;
+  id: string;
   name: string;
-  address: string;
-  phone: string;
-  manager: string;
-  studentsCount: number;
-  groupsCount: number;
+  address: string | null;
+  phone: string | null;
+  managerId: string | null;
+  isActive: boolean;
+}
+interface TeacherOption { id: string; fullName: string; }
+
+function extractErrorMessage(error: unknown): string {
+  const data = (error as { response?: { data?: { message?: string | string[] } } })?.response?.data;
+  if (Array.isArray(data?.message)) return data.message[0];
+  return data?.message || "Xatolik yuz berdi";
 }
 
-const initialBranches: Branch[] = [
-  { id: 1, name: "Markaz filiali", address: "Toshkent sh., Chilonzor tumani, 15-uy", phone: "+998 71 123 45 67", manager: "Sardor Toshmatov", studentsCount: 120, groupsCount: 12 },
-  { id: 2, name: "Yunusobod filiali", address: "Toshkent sh., Yunusobod tumani, 8-uy", phone: "+998 71 234 56 78", manager: "Malika Yusupova", studentsCount: 85, groupsCount: 8 },
-  { id: 3, name: "Mirzo Ulug'bek filiali", address: "Toshkent sh., Mirzo Ulug'bek tumani, 3-uy", phone: "+998 71 345 67 89", manager: "Jasur Karimov", studentsCount: 60, groupsCount: 6 },
-];
-
-const empty = { name: "", address: "", phone: "", manager: "" };
+const NO_MANAGER = "__none__";
+const empty = { name: "", address: "", phone: "", managerId: NO_MANAGER };
 
 export default function BranchesPage() {
-  const [branches, setBranches] = React.useState(initialBranches);
+  const queryClient = useQueryClient();
+  const confirm = useConfirm();
   const [open, setOpen] = React.useState(false);
-  const [editId, setEditId] = React.useState<number | null>(null);
+  const [editId, setEditId] = React.useState<string | null>(null);
   const [form, setForm] = React.useState(empty);
 
+  const { data } = useQuery({
+    queryKey: ["branches"],
+    queryFn: () => branchesApi.getAll({ limit: 100 }).then((r) => r.data as { data: Branch[]; meta: { total: number } }),
+  });
+  const branches = data?.data ?? [];
+
+  const { data: teachersRes } = useQuery({
+    queryKey: ["teachers-options"],
+    queryFn: () => teachersApi.getAll({ limit: 200 }).then((r) => r.data as { data: TeacherOption[] }),
+  });
+  const teachers = teachersRes?.data ?? [];
+  const teacherMap = React.useMemo(() => new Map(teachers.map((t) => [t.id, t.fullName])), [teachers]);
+
+  const createMutation = useMutation({
+    mutationFn: () => branchesApi.create({
+      name: form.name,
+      address: form.address || undefined,
+      phone: form.phone || undefined,
+      managerId: form.managerId === NO_MANAGER ? undefined : form.managerId,
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["branches"] });
+      toast.success("Filial qo'shildi");
+      setOpen(false);
+    },
+    onError: (e) => toast.error(extractErrorMessage(e)),
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: () => branchesApi.update(editId as string, {
+      name: form.name,
+      address: form.address || undefined,
+      phone: form.phone || undefined,
+      managerId: form.managerId === NO_MANAGER ? undefined : form.managerId,
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["branches"] });
+      toast.success("Yangilandi");
+      setOpen(false);
+    },
+    onError: (e) => toast.error(extractErrorMessage(e)),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => branchesApi.delete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["branches"] });
+      toast.success("O'chirildi");
+    },
+    onError: (e) => toast.error(extractErrorMessage(e)),
+  });
+
   const openAdd = () => { setEditId(null); setForm(empty); setOpen(true); };
-  const openEdit = (b: Branch) => { setEditId(b.id); setForm({ name: b.name, address: b.address, phone: b.phone, manager: b.manager }); setOpen(true); };
+  const openEdit = (b: Branch) => { setEditId(b.id); setForm({ name: b.name, address: b.address ?? "", phone: b.phone ?? "", managerId: b.managerId ?? NO_MANAGER }); setOpen(true); };
 
   const handleSave = () => {
-    if (!form.name || !form.address) { toast.error("Nom va manzilni kiriting"); return; }
-    if (editId) {
-      setBranches(prev => prev.map(b => b.id === editId ? { ...b, ...form } : b));
-      toast.success("Yangilandi");
-    } else {
-      setBranches(prev => [...prev, { id: Date.now(), ...form, studentsCount: 0, groupsCount: 0 }]);
-      toast.success("Filial qo'shildi");
-    }
-    setOpen(false);
+    if (!form.name.trim()) { toast.error("Filial nomini kiriting"); return; }
+    if (editId) updateMutation.mutate(); else createMutation.mutate();
   };
 
-  const handleDelete = (id: number) => {
-    setBranches(prev => prev.filter(b => b.id !== id));
-    toast.success("O'chirildi");
+  const handleDelete = async (id: string) => {
+    if (!(await confirm("O'chirishni tasdiqlaysizmi?"))) return;
+    deleteMutation.mutate(id);
   };
 
   return (
@@ -73,7 +123,7 @@ export default function BranchesPage() {
                   </div>
                   <div>
                     <p className="font-semibold text-sm">{b.name}</p>
-                    <p className="text-xs text-[var(--muted-foreground)]">{b.manager}</p>
+                    <p className="text-xs text-[var(--muted-foreground)]">{b.isActive ? "Faol" : "Nofaol"}</p>
                   </div>
                 </div>
                 <div className="flex gap-1 shrink-0">
@@ -82,35 +132,38 @@ export default function BranchesPage() {
                 </div>
               </div>
               <div className="space-y-1.5 text-xs text-[var(--muted-foreground)]">
-                <div className="flex items-center gap-1.5"><MapPin className="h-3.5 w-3.5 shrink-0" />{b.address}</div>
-                <div className="flex items-center gap-1.5"><Phone className="h-3.5 w-3.5 shrink-0" />{b.phone}</div>
-              </div>
-              <div className="flex gap-2 pt-1">
-                <div className="flex-1 text-center p-2 rounded-lg bg-[var(--muted)]/50">
-                  <p className="text-base font-bold text-[#1E3A5F]">{b.studentsCount}</p>
-                  <p className="text-[10px] text-[var(--muted-foreground)]">O'quvchi</p>
-                </div>
-                <div className="flex-1 text-center p-2 rounded-lg bg-[var(--muted)]/50">
-                  <p className="text-base font-bold text-[#1E3A5F]">{b.groupsCount}</p>
-                  <p className="text-[10px] text-[var(--muted-foreground)]">Guruh</p>
-                </div>
+                {b.address && <div className="flex items-center gap-1.5"><MapPin className="h-3.5 w-3.5 shrink-0" />{b.address}</div>}
+                {b.phone && <div className="flex items-center gap-1.5"><Phone className="h-3.5 w-3.5 shrink-0" />{b.phone}</div>}
+                {b.managerId && <p>Menejer: {teacherMap.get(b.managerId) ?? "—"}</p>}
               </div>
             </CardContent>
           </Card>
         ))}
+        {branches.length === 0 && (
+          <div className="col-span-full text-center text-[var(--muted-foreground)] py-12 bg-[var(--card)] border border-[var(--border)] rounded-xl">Filiallar yo'q</div>
+        )}
       </div>
 
       <Modal open={open} onOpenChange={setOpen} size="sm">
         <ModalHeader><ModalTitle>{editId ? "Filialni tahrirlash" : "Yangi filial"}</ModalTitle></ModalHeader>
         <div className="p-6 space-y-3">
           <Input label="Filial nomi *" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Markaz filiali" />
-          <Input label="Manzil *" value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} placeholder="Toshkent sh., ..." />
+          <Input label="Manzil" value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} placeholder="Toshkent sh., ..." />
           <Input label="Telefon" value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} placeholder="+998 71 ..." />
-          <Input label="Menejer" value={form.manager} onChange={e => setForm(f => ({ ...f, manager: e.target.value }))} placeholder="To'liq ism" />
+          <div>
+            <label className="text-sm font-medium mb-1.5 block">Menejer</label>
+            <Select value={form.managerId} onValueChange={(v) => setForm(f => ({ ...f, managerId: v }))}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NO_MANAGER}>Tanlanmagan</SelectItem>
+                {teachers.map((t) => <SelectItem key={t.id} value={t.id}>{t.fullName}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
         <ModalFooter>
           <Button variant="outline" onClick={() => setOpen(false)}>Bekor</Button>
-          <Button onClick={handleSave}>Saqlash</Button>
+          <Button onClick={handleSave} loading={createMutation.isPending || updateMutation.isPending}>Saqlash</Button>
         </ModalFooter>
       </Modal>
     </div>

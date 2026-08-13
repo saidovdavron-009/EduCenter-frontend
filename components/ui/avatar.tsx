@@ -3,6 +3,7 @@ import * as React from "react";
 import * as AvatarPrimitive from "@radix-ui/react-avatar";
 import { cn } from "@/lib/utils";
 import { getInitials } from "@/lib/utils";
+import { resolveFileUrl } from "@/lib/api";
 
 const Avatar = React.forwardRef<
   React.ComponentRef<typeof AvatarPrimitive.Root>,
@@ -59,9 +60,10 @@ interface UserAvatarProps {
 }
 
 function UserAvatar({ name, avatarUrl, size = "md", className }: UserAvatarProps) {
+  const resolvedUrl = resolveFileUrl(avatarUrl);
   return (
     <Avatar size={size} className={className}>
-      {avatarUrl && <AvatarImage src={avatarUrl} alt={name} />}
+      {resolvedUrl && <AvatarImage src={resolvedUrl} alt={name} />}
       <AvatarFallback>{getInitials(name)}</AvatarFallback>
     </Avatar>
   );

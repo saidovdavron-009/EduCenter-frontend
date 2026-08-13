@@ -5,19 +5,21 @@ import { ArrowLeft } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { subjectsApi, teachersApi, groupsApi, schedulesApi } from "@/lib/api";
 import toast from "react-hot-toast";
 
 const schema = z.object({
   name: z.string().min(2, "Kamida 2 ta belgi"),
   subjectId: z.string().min(1, "Fanni tanlang"),
   teacherId: z.string().min(1, "O'qituvchini tanlang"),
-  capacity: z.string().transform(Number).pipe(z.number().min(1).max(30)),
-  monthlyFee: z.string().transform(Number).pipe(z.number().min(0)),
+  capacity: z.coerce.number().min(1).max(30),
+  monthlyFee: z.coerce.number().min(0),
   room: z.string().optional(),
   description: z.string().optional(),
 });
@@ -32,53 +34,87 @@ type FormData = {
   description?: string;
 };
 
-const subjects = [
-  { id: "1", name: "Ingliz tili" },
-  { id: "2", name: "Matematika" },
-  { id: "3", name: "Rus tili" },
-  { id: "4", name: "Fizika" },
-];
+interface SubjectOption { id: string; name: string; }
+interface TeacherOption { id: string; fullName: string; }
 
-const teachers = [
-  { id: "1", name: "Aziz Karimov" },
-  { id: "2", name: "Nodira Yusupova" },
-  { id: "3", name: "Sardor Toshev" },
-];
-
-const DAYS = ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"];
+const DAYS = ["MON", "TUE", "WED", "THU", "FRI", "SAT"];
 const DAY_LABELS: Record<string, string> = {
-  MONDAY: "Dushanba", TUESDAY: "Seshanba", WEDNESDAY: "Chorshanba",
-  THURSDAY: "Payshanba", FRIDAY: "Juma", SATURDAY: "Shanba"
+  MON: "Dushanba", TUE: "Seshanba", WED: "Chorshanba",
+  THU: "Payshanba", FRI: "Juma", SAT: "Shanba",
 };
+
+function extractErrorMessage(error: unknown): string {
+  const data = (error as { response?: { data?: { message?: string | string[] } } })?.response?.data;
+  if (Array.isArray(data?.message)) return data.message[0];
+  return data?.message || "Xatolik yuz berdi";
+}
 
 export default function NewGroupPage() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const [selectedDays, setSelectedDays] = React.useState<string[]>([]);
   const [startTime, setStartTime] = React.useState("09:00");
   const [endTime, setEndTime] = React.useState("11:00");
   const [subjectId, setSubjectId] = React.useState("");
   const [teacherId, setTeacherId] = React.useState("");
-  const [loading, setLoading] = React.useState(false);
+
+  const { data: subjectsRes } = useQuery({
+    queryKey: ["subjects-options"],
+    queryFn: () => subjectsApi.getAll().then((r) => r.data as SubjectOption[]),
+  });
+  const subjects = subjectsRes ?? [];
+
+  const { data: teachersRes } = useQuery({
+    queryKey: ["teachers-options"],
+    queryFn: () => teachersApi.getAll({ limit: 100 }).then((r) => r.data as { data: TeacherOption[] }),
+  });
+  const teachers = teachersRes?.data ?? [];
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { register, handleSubmit, formState: { errors } } = useForm<FormData>({
+  const { register, handleSubmit, setValue, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema) as any,
     defaultValues: { capacity: 12 as any, monthlyFee: 500000 as any }
   });
+
+  const onSubjectChange = (v: string) => {
+    setSubjectId(v);
+    setValue("subjectId", v, { shouldValidate: true });
+  };
+
+  const onTeacherChange = (v: string) => {
+    setTeacherId(v);
+    setValue("teacherId", v, { shouldValidate: true });
+  };
 
   const toggleDay = (day: string) => {
     setSelectedDays(prev => prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day]);
   };
 
-  const onSubmit = async (data: FormData) => {
+  const mutation = useMutation({
+    mutationFn: async (data: FormData) => {
+      const { room, ...groupPayload } = data;
+      const { data: group } = await groupsApi.create(groupPayload);
+      await Promise.all(
+        selectedDays.map((day) =>
+          schedulesApi.create({ groupId: group.id, dayOfWeek: day, startTime, endTime, room: data.room || undefined })
+        )
+      );
+      return group;
+    },
+    onSuccess: (group) => {
+      toast.success(`"${group.name}" guruhi yaratildi`);
+      queryClient.invalidateQueries({ queryKey: ["groups"] });
+      router.push("/admin/groups");
+    },
+    onError: (error) => toast.error(extractErrorMessage(error)),
+  });
+
+  const onSubmit = (data: FormData) => {
     if (selectedDays.length === 0) {
       toast.error("Kamida bitta kun tanlang");
       return;
     }
-    setLoading(true);
-    await new Promise(r => setTimeout(r, 800));
-    toast.success(`"${data.name}" guruhi yaratildi`);
-    router.push("/admin/groups");
+    mutation.mutate(data);
   };
 
   return (
@@ -101,7 +137,7 @@ export default function NewGroupPage() {
 
             <div>
               <label className="text-sm font-medium mb-1.5 block">Fan *</label>
-              <Select value={subjectId} onValueChange={v => setSubjectId(v)}>
+              <Select value={subjectId} onValueChange={onSubjectChange}>
                 <SelectTrigger className={errors.subjectId ? "border-red-500" : ""}>
                   <SelectValue placeholder="Fanni tanlang" />
                 </SelectTrigger>
@@ -109,21 +145,21 @@ export default function NewGroupPage() {
                   {subjects.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
                 </SelectContent>
               </Select>
-              <input type="hidden" value={subjectId} {...register("subjectId")} />
+              <input type="hidden" {...register("subjectId")} />
               {errors.subjectId && <p className="text-xs text-red-500 mt-1">{errors.subjectId.message}</p>}
             </div>
 
             <div>
               <label className="text-sm font-medium mb-1.5 block">O'qituvchi *</label>
-              <Select value={teacherId} onValueChange={v => setTeacherId(v)}>
-                <SelectTrigger>
+              <Select value={teacherId} onValueChange={onTeacherChange}>
+                <SelectTrigger className={errors.teacherId ? "border-red-500" : ""}>
                   <SelectValue placeholder="O'qituvchini tanlang" />
                 </SelectTrigger>
                 <SelectContent>
-                  {teachers.map(t => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
+                  {teachers.map(t => <SelectItem key={t.id} value={t.id}>{t.fullName}</SelectItem>)}
                 </SelectContent>
               </Select>
-              <input type="hidden" value={teacherId} {...register("teacherId")} />
+              <input type="hidden" {...register("teacherId")} />
               {errors.teacherId && <p className="text-xs text-red-500 mt-1">{errors.teacherId.message}</p>}
             </div>
 
@@ -176,7 +212,7 @@ export default function NewGroupPage() {
 
         <div className="flex gap-3 justify-end">
           <Button type="button" variant="outline" onClick={() => router.back()}>Bekor qilish</Button>
-          <Button type="submit" loading={loading}>Guruh yaratish</Button>
+          <Button type="submit" loading={mutation.isPending}>Guruh yaratish</Button>
         </div>
       </form>
     </div>

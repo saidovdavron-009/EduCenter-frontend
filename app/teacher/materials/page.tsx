@@ -1,78 +1,113 @@
 "use client";
 import React from "react";
-import { Plus, FileText, Download, Trash2, Book } from "lucide-react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Plus, FileText, Film, Image as ImageIcon, Link as LinkIcon, ExternalLink, Trash2 } from "lucide-react";
+import { materialsApi, groupsApi } from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Modal, ModalHeader, ModalTitle, ModalFooter } from "@/components/ui/modal";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/modal";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { formatDate } from "@/lib/utils";
+import { useAuthStore } from "@/store/authStore";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import toast from "react-hot-toast";
 
-type MaterialType = "PDF" | "VIDEO" | "DOCUMENT" | "LINK" | "IMAGE";
+type MaterialType = "PDF" | "VIDEO" | "IMAGE" | "LINK";
 
-interface Material {
+interface MaterialRow {
   id: string;
+  groupId: string | null;
   title: string;
   type: MaterialType;
-  groupId: string;
-  groupName: string;
-  uploadedAt: string;
-  size?: string;
-  description?: string;
+  url: string;
+  description: string | null;
+  createdAt: string;
 }
+interface GroupOption { id: string; name: string; }
 
-const typeConfig: Record<MaterialType, { label: string; color: string; bg: string }> = {
-  PDF:      { label: "PDF",      color: "text-red-600",    bg: "bg-red-50" },
-  VIDEO:    { label: "Video",    color: "text-blue-600",   bg: "bg-blue-50" },
-  DOCUMENT: { label: "Hujjat",  color: "text-gray-600",   bg: "bg-gray-50" },
-  LINK:     { label: "Havola",   color: "text-purple-600", bg: "bg-purple-50" },
-  IMAGE:    { label: "Rasm",     color: "text-green-600",  bg: "bg-green-50" },
+const NO_GROUP = "__none__";
+
+const typeConfig: Record<MaterialType, { label: string; icon: React.ElementType; color: string; bg: string }> = {
+  PDF: { label: "PDF", icon: FileText, color: "text-red-600", bg: "bg-red-50" },
+  VIDEO: { label: "Video", icon: Film, color: "text-blue-600", bg: "bg-blue-50" },
+  IMAGE: { label: "Rasm", icon: ImageIcon, color: "text-green-600", bg: "bg-green-50" },
+  LINK: { label: "Havola", icon: LinkIcon, color: "text-purple-600", bg: "bg-purple-50" },
 };
 
-const initialMaterials: Material[] = [
-  { id: "1", title: "Present Simple Grammar Rules", type: "PDF", groupId: "1", groupName: "Ingliz tili A2", uploadedAt: "2025-01-25", size: "1.2 MB", description: "Grammatika qoidalari va misollar" },
-  { id: "2", title: "Vocabulary Unit 5", type: "DOCUMENT", groupId: "1", groupName: "Ingliz tili A2", uploadedAt: "2025-01-24", size: "340 KB" },
-  { id: "3", title: "Listening Exercise Video", type: "VIDEO", groupId: "2", groupName: "Ingliz tili B1", uploadedAt: "2025-01-23", size: "45 MB", description: "Tinglab tushunish mashqlari" },
-  { id: "4", title: "Oxford Dictionary Online", type: "LINK", groupId: "1", groupName: "Ingliz tili A2", uploadedAt: "2025-01-22" },
-  { id: "5", title: "Pronunciation Guide", type: "PDF", groupId: "3", groupName: "Speaking Club", uploadedAt: "2025-01-20", size: "890 KB" },
-  { id: "6", title: "Grammar Charts", type: "IMAGE", groupId: "2", groupName: "Ingliz tili B1", uploadedAt: "2025-01-19", size: "2.1 MB" },
-];
+function extractErrorMessage(error: unknown): string {
+  const data = (error as { response?: { data?: { message?: string | string[] } } })?.response?.data;
+  if (Array.isArray(data?.message)) return data.message[0];
+  return data?.message || "Xatolik yuz berdi";
+}
+
+const emptyForm = { title: "", type: "PDF" as MaterialType, url: "", groupId: NO_GROUP, description: "" };
 
 export default function TeacherMaterialsPage() {
-  const [materials, setMaterials] = React.useState(initialMaterials);
-  const [group, setGroup] = React.useState("ALL");
+  const queryClient = useQueryClient();
+  const confirm = useConfirm();
+  const { user } = useAuthStore();
+  const teacherId = user?.profile?.id;
+  const [groupFilter, setGroupFilter] = React.useState("ALL");
   const [typeFilter, setTypeFilter] = React.useState("ALL");
-  const [open, setOpen] = React.useState(false);
-  const [form, setForm] = React.useState({ title: "", type: "PDF" as MaterialType, groupId: "1", description: "" });
+  const [showModal, setShowModal] = React.useState(false);
+  const [form, setForm] = React.useState(emptyForm);
 
-  const filtered = materials.filter(m =>
-    (group === "ALL" || m.groupId === group) &&
-    (typeFilter === "ALL" || m.type === typeFilter)
-  );
+  const { data: materials = [], isLoading } = useQuery({
+    queryKey: ["my-materials", teacherId, { groupId: groupFilter, type: typeFilter }],
+    queryFn: () =>
+      materialsApi
+        .getAll({ teacherId, groupId: groupFilter === "ALL" ? undefined : groupFilter, type: typeFilter === "ALL" ? undefined : typeFilter })
+        .then((r) => r.data as MaterialRow[]),
+    enabled: !!teacherId,
+  });
 
-  const handleDelete = (id: string) => {
-    setMaterials(prev => prev.filter(m => m.id !== id));
-    toast.success("Material o'chirildi");
-  };
+  const { data: groupsRes } = useQuery({
+    queryKey: ["my-groups-options", teacherId],
+    queryFn: () => groupsApi.getAll({ teacherId, limit: 100 }).then((r) => r.data as { data: GroupOption[] }),
+    enabled: !!teacherId,
+  });
+  const groups = groupsRes?.data ?? [];
+  const groupMap = React.useMemo(() => new Map(groups.map((g) => [g.id, g.name])), [groups]);
+
+  const createMutation = useMutation({
+    mutationFn: () =>
+      materialsApi.create({
+        title: form.title,
+        type: form.type,
+        url: form.url,
+        groupId: form.groupId === NO_GROUP ? undefined : form.groupId,
+        teacherId,
+        description: form.description || undefined,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["my-materials"] });
+      toast.success("Material qo'shildi");
+      setShowModal(false);
+      setForm(emptyForm);
+    },
+    onError: (e) => toast.error(extractErrorMessage(e)),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => materialsApi.delete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["my-materials"] });
+      toast.success("Material o'chirildi");
+    },
+    onError: (e) => toast.error(extractErrorMessage(e)),
+  });
 
   const handleCreate = () => {
-    if (!form.title) { toast.error("Sarlavhani kiriting"); return; }
-    const groupNames: Record<string, string> = { "1": "Ingliz tili A2", "2": "Ingliz tili B1", "3": "Speaking Club" };
-    setMaterials(prev => [{
-      id: String(Date.now()),
-      title: form.title,
-      type: form.type,
-      groupId: form.groupId,
-      groupName: groupNames[form.groupId],
-      uploadedAt: new Date().toISOString().split("T")[0],
-      description: form.description,
-    }, ...prev]);
-    setOpen(false);
-    toast.success("Material qo'shildi");
-    setForm({ title: "", type: "PDF", groupId: "1", description: "" });
+    if (!form.title || !form.url) { toast.error("Sarlavha va URL kiriting"); return; }
+    createMutation.mutate();
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!(await confirm("O'chirishni tasdiqlaysizmi?"))) return;
+    deleteMutation.mutate(id);
   };
 
   return (
@@ -80,110 +115,114 @@ export default function TeacherMaterialsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl sm:text-2xl font-bold">O'quv materiallari</h1>
-          <p className="text-sm text-[var(--muted-foreground)] mt-1">{filtered.length} ta material</p>
+          <p className="text-sm text-[var(--muted-foreground)] mt-1">{materials.length} ta material</p>
         </div>
-        <Button onClick={() => setOpen(true)}><Plus className="h-4 w-4" />Material qo'shish</Button>
+        <Button size="sm" onClick={() => setShowModal(true)}>
+          <Plus className="h-4 w-4" />Material qo'shish
+        </Button>
       </div>
 
       <div className="flex flex-wrap gap-3">
-        <Select value={group} onValueChange={setGroup}>
+        <Select value={groupFilter} onValueChange={setGroupFilter}>
           <SelectTrigger className="w-48 h-9"><SelectValue placeholder="Guruh" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="ALL">Barcha guruhlar</SelectItem>
-            <SelectItem value="1">Ingliz tili A2</SelectItem>
-            <SelectItem value="2">Ingliz tili B1</SelectItem>
-            <SelectItem value="3">Speaking Club</SelectItem>
+            {groups.map((g) => <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>)}
           </SelectContent>
         </Select>
         <Select value={typeFilter} onValueChange={setTypeFilter}>
           <SelectTrigger className="w-36 h-9"><SelectValue placeholder="Tur" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="ALL">Barchasi</SelectItem>
-            <SelectItem value="PDF">PDF</SelectItem>
-            <SelectItem value="VIDEO">Video</SelectItem>
-            <SelectItem value="DOCUMENT">Hujjat</SelectItem>
-            <SelectItem value="LINK">Havola</SelectItem>
-            <SelectItem value="IMAGE">Rasm</SelectItem>
+            {(Object.keys(typeConfig) as MaterialType[]).map((t) => (
+              <SelectItem key={t} value={t}>{typeConfig[t].label}</SelectItem>
+            ))}
           </SelectContent>
         </Select>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-        {filtered.map(m => {
-          const cfg = typeConfig[m.type];
-          return (
-            <Card key={m.id} className="hover:shadow-md transition-shadow">
-              <CardContent className="pt-5">
-                <div className="flex items-start gap-3">
-                  <div className={`h-10 w-10 rounded-xl ${cfg.bg} flex items-center justify-center flex-shrink-0`}>
-                    <FileText className={`h-5 w-5 ${cfg.color}`} />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium text-sm leading-tight truncate">{m.title}</p>
-                    <p className="text-xs text-[var(--muted-foreground)] mt-0.5">{m.groupName}</p>
-                    {m.description && <p className="text-xs text-[var(--muted-foreground)] mt-1 truncate">{m.description}</p>}
-                    <div className="flex items-center gap-2 mt-2">
-                      <Badge variant="secondary" className="text-xs">{cfg.label}</Badge>
-                      {m.size && <span className="text-xs text-[var(--muted-foreground)]">{m.size}</span>}
-                      <span className="text-xs text-[var(--muted-foreground)] ml-auto">{formatDate(m.uploadedAt)}</span>
+        {isLoading ? (
+          Array.from({ length: 6 }).map((_, i) => (
+            <Card key={i}><CardContent className="pt-5"><div className="h-20 bg-[var(--muted)] rounded animate-pulse" /></CardContent></Card>
+          ))
+        ) : materials.length === 0 ? (
+          <div className="col-span-full text-center text-[var(--muted-foreground)] py-12">Materiallar topilmadi</div>
+        ) : (
+          materials.map((m) => {
+            const cfg = typeConfig[m.type];
+            const Icon = cfg.icon;
+            return (
+              <Card key={m.id} className="hover:shadow-md transition-shadow">
+                <CardContent className="pt-5">
+                  <div className="flex items-start gap-3">
+                    <div className={`h-10 w-10 rounded-xl ${cfg.bg} flex items-center justify-center shrink-0`}>
+                      <Icon className={`h-5 w-5 ${cfg.color}`} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-sm leading-tight truncate">{m.title}</p>
+                      <p className="text-xs text-[var(--muted-foreground)] mt-0.5 truncate">
+                        {m.groupId ? groupMap.get(m.groupId) ?? "—" : "Umumiy"}
+                      </p>
+                      {m.description && <p className="text-xs text-[var(--muted-foreground)] mt-1 truncate">{m.description}</p>}
+                      <div className="flex items-center gap-2 mt-2">
+                        <Badge variant="secondary" className="text-xs">{cfg.label}</Badge>
+                        <span className="text-xs text-[var(--muted-foreground)] ml-auto">{formatDate(m.createdAt)}</span>
+                      </div>
                     </div>
                   </div>
-                </div>
-                <div className="flex gap-2 mt-3">
-                  <Button variant="outline" size="sm" className="flex-1 h-7 text-xs">
-                    <Download className="h-3.5 w-3.5" />
-                    Yuklab olish
-                  </Button>
-                  <Button variant="ghost" size="icon-sm" onClick={() => handleDelete(m.id)}>
-                    <Trash2 className="h-3.5 w-3.5 text-red-500" />
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          );
-        })}
-        {filtered.length === 0 && (
-          <div className="col-span-3 text-center text-[var(--muted-foreground)] py-12">
-            Materiallar yo'q
-          </div>
+                  <div className="flex gap-2 mt-3">
+                    <a href={m.url} target="_blank" rel="noopener noreferrer" className="flex-1">
+                      <Button variant="outline" size="sm" className="w-full h-7 text-xs">
+                        <ExternalLink className="h-3.5 w-3.5" />Ochish
+                      </Button>
+                    </a>
+                    <Button variant="ghost" size="icon-sm" onClick={() => handleDelete(m.id)}>
+                      <Trash2 className="h-3.5 w-3.5 text-red-500" />
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })
         )}
       </div>
 
-      <Modal open={open} onOpenChange={setOpen} size="sm">
-        <ModalHeader><ModalTitle>Yangi material</ModalTitle></ModalHeader>
-        <div className="space-y-4 p-6">
-          <Input label="Sarlavha" value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} placeholder="Material nomi" />
-          <div>
-            <label className="text-sm font-medium mb-1.5 block">Tur</label>
-            <Select value={form.type} onValueChange={v => setForm(f => ({ ...f, type: v as MaterialType }))}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="PDF">PDF</SelectItem>
-                <SelectItem value="VIDEO">Video</SelectItem>
-                <SelectItem value="DOCUMENT">Hujjat</SelectItem>
-                <SelectItem value="LINK">Havola</SelectItem>
-                <SelectItem value="IMAGE">Rasm</SelectItem>
-              </SelectContent>
-            </Select>
+      <Dialog open={showModal} onOpenChange={setShowModal}>
+        <DialogContent size="sm">
+          <DialogHeader><DialogTitle>Yangi material</DialogTitle></DialogHeader>
+          <div className="p-6 space-y-4">
+            <Input label="Sarlavha *" value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} placeholder="Material nomi" />
+            <div>
+              <label className="text-sm font-medium mb-1.5 block">Tur</label>
+              <Select value={form.type} onValueChange={(v) => setForm((f) => ({ ...f, type: v as MaterialType }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {(Object.keys(typeConfig) as MaterialType[]).map((t) => (
+                    <SelectItem key={t} value={t}>{typeConfig[t].label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Input label="URL *" value={form.url} onChange={(e) => setForm((f) => ({ ...f, url: e.target.value }))} placeholder="https://..." />
+            <div>
+              <label className="text-sm font-medium mb-1.5 block">Guruh</label>
+              <Select value={form.groupId} onValueChange={(v) => setForm((f) => ({ ...f, groupId: v }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NO_GROUP}>Umumiy (guruhsiz)</SelectItem>
+                  {groups.map((g) => <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <Textarea label="Tavsif" rows={2} value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} />
           </div>
-          <div>
-            <label className="text-sm font-medium mb-1.5 block">Guruh</label>
-            <Select value={form.groupId} onValueChange={v => setForm(f => ({ ...f, groupId: v }))}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="1">Ingliz tili A2</SelectItem>
-                <SelectItem value="2">Ingliz tili B1</SelectItem>
-                <SelectItem value="3">Speaking Club</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <Textarea label="Tavsif (ixtiyoriy)" value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} rows={2} />
-        </div>
-        <ModalFooter>
-          <Button variant="outline" onClick={() => setOpen(false)}>Bekor</Button>
-          <Button onClick={handleCreate}>Saqlash</Button>
-        </ModalFooter>
-      </Modal>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowModal(false)}>Bekor qilish</Button>
+            <Button onClick={handleCreate} loading={createMutation.isPending}>Saqlash</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -6,35 +6,19 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Eye, EyeOff } from "lucide-react";
 import { useAuthStore } from "@/store/authStore";
+import { authApi } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import toast from "react-hot-toast";
+import type { AuthUser, UserRole } from "@/types";
 
 const loginSchema = z.object({
-  login: z.string().min(2, "Login kiriting"),
+  login: z.string().min(3, "ID raqamingizni kiriting"),
   password: z.string().min(4, "Parol kamida 4 ta belgi"),
 });
 
 type LoginFormData = z.infer<typeof loginSchema>;
 
-function createFakeJwt(role: "ADMIN" | "TEACHER" | "STUDENT" | "PARENT") {
-  const header = { alg: "none", typ: "JWT" };
-  const payload = { role, exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 };
-  const encode = (obj: object) =>
-    btoa(JSON.stringify(obj)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-  return `${encode(header)}.${encode(payload)}.`;
-}
-
-function getRoleFromLogin(login: string): "ADMIN" | "TEACHER" | "STUDENT" | "PARENT" {
-  const l = login.toLowerCase();
-  if (/^id\d+$/i.test(l)) return "STUDENT";
-  if (l.includes("admin"))   return "ADMIN";
-  if (l.includes("teacher")) return "TEACHER";
-  if (l.includes("student")) return "STUDENT";
-  if (l.includes("parent"))  return "PARENT";
-  return "ADMIN";
-}
-
-function getRedirectFromRole(role: "ADMIN" | "TEACHER" | "STUDENT" | "PARENT") {
+function getRedirectFromRole(role: UserRole) {
   switch (role) {
     case "ADMIN":   return "/admin/dashboard";
     case "TEACHER": return "/teacher/dashboard";
@@ -43,21 +27,16 @@ function getRedirectFromRole(role: "ADMIN" | "TEACHER" | "STUDENT" | "PARENT") {
   }
 }
 
-function getFullName(role: "ADMIN" | "TEACHER" | "STUDENT" | "PARENT", login: string) {
-  if (role === "STUDENT" && /^id\d+$/i.test(login)) {
-    return `O'quvchi ${login.toUpperCase()}`;
-  }
-  const names: Record<string, string> = {
-    ADMIN: "Admin Demo", TEACHER: "Teacher Demo",
-    STUDENT: "Student Demo", PARENT: "Parent Demo",
-  };
-  return names[role];
+function extractErrorMessage(error: unknown): string {
+  const data = (error as { response?: { data?: { message?: string | string[] } } })?.response?.data;
+  if (Array.isArray(data?.message)) return data.message[0];
+  return data?.message || "ID yoki parol noto'g'ri";
 }
 
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { setAuth } = useAuthStore();
+  const { setAuth, hydrateProfile, logout } = useAuthStore();
   const [showPassword, setShowPassword] = React.useState(false);
   const [loading, setLoading] = React.useState(false);
 
@@ -65,25 +44,50 @@ function LoginForm() {
     resolver: zodResolver(loginSchema),
   });
 
-  const onSubmit = async (data: LoginFormData) => {
+  // Eski/yaroqsiz sessiya qoldiqlari (masalan avvalgi test tokenlari) yangi
+  // kirishga xalaqit bermasligi uchun login sahifasi ochilganda tozalanadi.
+  React.useEffect(() => {
+    logout();
+
+    // Agar oldingi sahifada 401 sabab avtomatik logout+redirect bo'lgan bo'lsa,
+    // sababi shu yerda ko'rsatiladi (redirect sahifani reload qilgani uchun
+    // konsol tozalanib ketadi — shuning uchun bu yerda saqlab qo'yamiz).
+    const lastError = sessionStorage.getItem("lastAuthError");
+    if (lastError) {
+      console.error("[auth] Oxirgi avtomatik chiqish sababi:", JSON.parse(lastError));
+      toast.error("Sessiya tugadi: " + lastError, { duration: 15000 });
+      sessionStorage.removeItem("lastAuthError");
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const onSubmit = async (formData: LoginFormData) => {
     setLoading(true);
     try {
-      const role = getRoleFromLogin(data.login);
-      const token = createFakeJwt(role);
-      const user = {
-        id: `demo-${role.toLowerCase()}`,
-        email: data.login,
-        role,
+      const { data } = await authApi.login(formData.login, formData.password);
+      const { accessToken, refreshToken, user } = data;
+
+      const authUser: AuthUser = {
+        id: user.id,
+        email: user.email,
+        loginId: user.loginId,
+        role: user.role,
         isActive: true,
-        profile: { fullName: getFullName(role, data.login) },
+        avatarUrl: user.avatarUrl,
       };
-      document.cookie = `accessToken=${token}; path=/`;
-      setAuth(user, token, "demo-refresh-token");
+      setAuth(authUser, accessToken, refreshToken);
+
+      try {
+        const { data: profile } = await authApi.getProfile();
+        hydrateProfile(profile);
+      } catch {
+        // Profile fetch is best-effort; login already succeeded.
+      }
+
       toast.success("Xush kelibsiz!");
       const callbackUrl = searchParams.get("callbackUrl");
-      router.push(callbackUrl || getRedirectFromRole(role));
-    } catch {
-      toast.error("Xatolik yuz berdi");
+      router.push(callbackUrl || getRedirectFromRole(user.role));
+    } catch (error) {
+      toast.error(extractErrorMessage(error));
     } finally {
       setLoading(false);
     }
@@ -91,12 +95,13 @@ function LoginForm() {
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-      {/* Login field */}
+      {/* Login ID field */}
       <div>
         <div className={`flex items-center border rounded-xl px-4 h-12 bg-white transition-colors ${errors.login ? "border-red-400" : "border-gray-200 focus-within:border-[#1E3A5F]"}`}>
           <input
             type="text"
-            placeholder="Kirish (login yoki ID)"
+            inputMode="numeric"
+            placeholder="ID raqami"
             autoComplete="username"
             className="flex-1 outline-none text-sm bg-transparent text-gray-800 placeholder:text-gray-400"
             {...register("login")}

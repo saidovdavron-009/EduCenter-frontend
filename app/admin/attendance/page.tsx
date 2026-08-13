@@ -1,5 +1,6 @@
 "use client";
 import React from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle, XCircle, Clock, AlertCircle, ClipboardCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -7,27 +8,67 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { StatCard } from "@/components/ui/stat-card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { UserAvatar } from "@/components/ui/avatar";
-import { formatDate, getStatusColor, getStatusLabel } from "@/lib/utils";
-import type { AttendanceStatus } from "@/types";
+import { formatDate } from "@/lib/utils";
+import { attendanceApi, groupsApi, schedulesApi } from "@/lib/api";
+import type { AttendanceStatus, DayOfWeek } from "@/types";
 import toast from "react-hot-toast";
 
-const mockAttendanceList = [
-  { studentId: "1", studentName: "Alibek Karimov", status: "PRESENT" as AttendanceStatus, date: new Date().toISOString().split("T")[0] },
-  { studentId: "2", studentName: "Malika Toshmatova", status: "ABSENT" as AttendanceStatus, date: new Date().toISOString().split("T")[0] },
-  { studentId: "3", studentName: "Jasur Yusupov", status: "LATE" as AttendanceStatus, date: new Date().toISOString().split("T")[0] },
-  { studentId: "4", studentName: "Zulfiya Abdullayeva", status: "PRESENT" as AttendanceStatus, date: new Date().toISOString().split("T")[0] },
-  { studentId: "5", studentName: "Bobur Nazarov", status: "PRESENT" as AttendanceStatus, date: new Date().toISOString().split("T")[0] },
-  { studentId: "6", studentName: "Umida Yusupova", status: "EXCUSED" as AttendanceStatus, date: new Date().toISOString().split("T")[0] },
-  { studentId: "7", studentName: "Sherzod Karimov", status: "PRESENT" as AttendanceStatus, date: new Date().toISOString().split("T")[0] },
-  { studentId: "8", studentName: "Nodira Tosheva", status: "ABSENT" as AttendanceStatus, date: new Date().toISOString().split("T")[0] },
-];
+interface GroupOption { id: string; name: string; }
+interface GroupStudent { id: string; fullName: string; phone: string; avatarUrl: string | null; status: string; }
+interface ScheduleOption { id: string; dayOfWeek: DayOfWeek; startTime: string; endTime: string }
+interface AttendanceRecord { studentId: string; status: AttendanceStatus }
+
+function extractErrorMessage(error: unknown): string {
+  const data = (error as { response?: { data?: { message?: string | string[] } } })?.response?.data;
+  if (Array.isArray(data?.message)) return data.message[0];
+  return data?.message || "Xatolik yuz berdi";
+}
+
+const DOW_BY_JS_DAY: DayOfWeek[] = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
+const EMPTY_STUDENTS: GroupStudent[] = [];
 
 export default function AttendancePage() {
-  const [selectedGroup, setSelectedGroup] = React.useState("ALL");
+  const queryClient = useQueryClient();
+  const [selectedGroup, setSelectedGroup] = React.useState("");
   const [selectedDate, setSelectedDate] = React.useState(new Date().toISOString().split("T")[0]);
-  const [attendanceMap, setAttendanceMap] = React.useState<Record<string, AttendanceStatus>>(() =>
-    Object.fromEntries(mockAttendanceList.map((a) => [a.studentId, a.status]))
-  );
+  const [attendanceMap, setAttendanceMap] = React.useState<Record<string, AttendanceStatus>>({});
+
+  const { data: groupsRes } = useQuery({
+    queryKey: ["groups-options"],
+    queryFn: () => groupsApi.getAll({ limit: 100 }).then((r) => r.data as { data: GroupOption[] }),
+  });
+  const groups = groupsRes?.data ?? [];
+
+  const { data: students = EMPTY_STUDENTS } = useQuery({
+    queryKey: ["group-students", selectedGroup],
+    queryFn: () => groupsApi.getById(selectedGroup).then((r) => (r.data as { students: GroupStudent[] }).students),
+    enabled: !!selectedGroup,
+  });
+
+  const { data: schedules = [] } = useQuery({
+    queryKey: ["group-schedules", selectedGroup],
+    queryFn: () => schedulesApi.getAll({ groupId: selectedGroup }).then((r) => r.data as ScheduleOption[]),
+    enabled: !!selectedGroup,
+  });
+
+  const dayOfWeek = DOW_BY_JS_DAY[new Date(selectedDate + "T00:00:00").getDay()];
+  const todaySchedule = schedules.find((s) => s.dayOfWeek === dayOfWeek);
+
+  const { data: existingAttendance } = useQuery({
+    queryKey: ["attendance", todaySchedule?.id, selectedDate],
+    queryFn: () =>
+      attendanceApi.getAll({ scheduleId: todaySchedule!.id, dateFrom: selectedDate, dateTo: selectedDate }).then(
+        (r) => (r.data as { data: AttendanceRecord[] }).data
+      ),
+    enabled: !!todaySchedule,
+  });
+
+  React.useEffect(() => {
+    const map: Record<string, AttendanceStatus> = {};
+    for (const s of students) map[s.id] = "PRESENT";
+    for (const a of existingAttendance ?? []) map[a.studentId] = a.status;
+    setAttendanceMap(map);
+  }, [students, existingAttendance]);
 
   const present = Object.values(attendanceMap).filter((s) => s === "PRESENT").length;
   const absent = Object.values(attendanceMap).filter((s) => s === "ABSENT").length;
@@ -35,7 +76,24 @@ export default function AttendancePage() {
   const excused = Object.values(attendanceMap).filter((s) => s === "EXCUSED").length;
   const total = Object.keys(attendanceMap).length;
 
-  const handleSave = () => toast.success("Davomat saqlandi");
+  const saveMutation = useMutation({
+    mutationFn: () =>
+      attendanceApi.markBulk({
+        scheduleId: todaySchedule!.id,
+        date: selectedDate,
+        attendances: students.map((s) => ({ studentId: s.id, status: attendanceMap[s.id] || "PRESENT" })),
+      }),
+    onSuccess: () => {
+      toast.success("Davomat saqlandi");
+      queryClient.invalidateQueries({ queryKey: ["attendance", todaySchedule?.id, selectedDate] });
+    },
+    onError: (e) => toast.error(extractErrorMessage(e)),
+  });
+
+  const handleSave = () => {
+    if (!todaySchedule) { toast.error("Bu kunda dars mavjud emas"); return; }
+    saveMutation.mutate();
+  };
 
   const handleStatusChange = (studentId: string, status: AttendanceStatus) => {
     setAttendanceMap((prev) => ({ ...prev, [studentId]: status }));
@@ -68,13 +126,12 @@ export default function AttendancePage() {
           <h1 className="text-xl sm:text-2xl font-bold">Davomat</h1>
           <p className="text-sm text-[var(--muted-foreground)] mt-1">Davomat belgilash va hisobotlar</p>
         </div>
-        <Button onClick={handleSave}>
+        <Button onClick={handleSave} loading={saveMutation.isPending} disabled={!todaySchedule}>
           <ClipboardCheck className="h-4 w-4" />
           Saqlash
         </Button>
       </div>
 
-      {/* Filters */}
       <div className="flex flex-wrap gap-3">
         <input
           type="date"
@@ -87,15 +144,15 @@ export default function AttendancePage() {
             <SelectValue placeholder="Guruh tanlang" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="ALL">Barchasi</SelectItem>
-            <SelectItem value="1">Ingliz tili A2</SelectItem>
-            <SelectItem value="2">Matematika B1</SelectItem>
-            <SelectItem value="3">Fizika A1</SelectItem>
+            {groups.map((g) => <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>)}
           </SelectContent>
         </Select>
       </div>
 
-      {/* Stats */}
+      {selectedGroup && !todaySchedule && (
+        <p className="text-sm text-amber-600">Tanlangan guruhda bu kunda ({formatDate(selectedDate)}) dars mavjud emas.</p>
+      )}
+
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
         <StatCard title="Keldi" value={`${present}/${total}`} icon={<CheckCircle className="h-5 w-5" />} iconBg="bg-green-100" />
         <StatCard title="Kelmadi" value={absent} icon={<XCircle className="h-5 w-5" />} iconBg="bg-red-100" />
@@ -103,39 +160,44 @@ export default function AttendancePage() {
         <StatCard title="Sababli" value={excused} icon={<AlertCircle className="h-5 w-5" />} iconBg="bg-blue-100" />
       </div>
 
-      {/* Attendance Table */}
       <Card>
         <CardHeader>
-          <CardTitle>Bugungi davomat — {formatDate(selectedDate)}</CardTitle>
+          <CardTitle>Davomat — {formatDate(selectedDate)}</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>O'quvchi</TableHead>
-                <TableHead>Holat</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {mockAttendanceList.map((a) => (
-                <TableRow key={a.studentId}>
-                  <TableCell>
-                    <div className="flex items-center gap-3">
-                      <UserAvatar name={a.studentName} size="sm" />
-                      <span className="font-medium text-sm">{a.studentName}</span>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex flex-wrap gap-1.5">
-                      {(["PRESENT", "ABSENT", "LATE", "EXCUSED"] as AttendanceStatus[]).map((s) => (
-                        <StatusButton key={s} studentId={a.studentId} status={s} />
-                      ))}
-                    </div>
-                  </TableCell>
+          {!selectedGroup ? (
+            <p className="p-4 text-sm text-[var(--muted-foreground)]">Guruhni tanlang</p>
+          ) : students.length === 0 ? (
+            <p className="p-4 text-sm text-[var(--muted-foreground)]">Guruhda o'quvchilar yo'q</p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>O'quvchi</TableHead>
+                  <TableHead>Holat</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {students.map((s) => (
+                  <TableRow key={s.id}>
+                    <TableCell>
+                      <div className="flex items-center gap-3">
+                        <UserAvatar name={s.fullName} size="sm" />
+                        <span className="font-medium text-sm">{s.fullName}</span>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex flex-wrap gap-1.5">
+                        {(["PRESENT", "ABSENT", "LATE", "EXCUSED"] as AttendanceStatus[]).map((s2) => (
+                          <StatusButton key={s2} studentId={s.id} status={s2} />
+                        ))}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
         </CardContent>
       </Card>
     </div>

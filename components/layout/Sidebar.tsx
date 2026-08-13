@@ -2,14 +2,16 @@
 import React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/store/authStore";
 import { useUIStore } from "@/store/uiStore";
+import { settingsApi } from "@/lib/api";
 import {
   LayoutDashboard, Users, GraduationCap, BookOpen, Calendar, ClipboardCheck,
-  CreditCard, BarChart2, Bell, FileText, BookMarked, Settings, ChevronLeft,
+  CreditCard, BarChart2, FileText, BookMarked, Settings, ChevronLeft,
   Building2, DollarSign, ChevronRight, Tag, Package, ClipboardList,
-  FileSignature, ListTodo, CalendarOff, UserCheck, Phone, DoorOpen, Layers,
+  FileSignature, ListTodo, CalendarOff, UserCheck, Phone, DoorOpen, Layers, Contact,
 } from "lucide-react";
 import { UserAvatar } from "@/components/ui/avatar";
 
@@ -36,6 +38,7 @@ const adminNav: NavGroup[] = [
     items: [
       { label: "O'quvchilar", href: "/admin/students", icon: <Users className="h-4 w-4" /> },
       { label: "O'qituvchilar", href: "/admin/teachers", icon: <GraduationCap className="h-4 w-4" /> },
+      { label: "Ota-onalar", href: "/admin/parents", icon: <Contact className="h-4 w-4" /> },
       { label: "Guruhlar", href: "/admin/groups", icon: <BookOpen className="h-4 w-4" /> },
       { label: "Dars jadvali", href: "/admin/schedule", icon: <Calendar className="h-4 w-4" /> },
       { label: "Filiallar", href: "/admin/branches", icon: <Building2 className="h-4 w-4" /> },
@@ -50,6 +53,7 @@ const adminNav: NavGroup[] = [
       { label: "O'qituvchi davomati", href: "/admin/teacher-attendance", icon: <UserCheck className="h-4 w-4" /> },
       { label: "Baholar", href: "/admin/grades", icon: <BookMarked className="h-4 w-4" /> },
       { label: "Uy vazifalari", href: "/admin/homework", icon: <FileText className="h-4 w-4" /> },
+      { label: "Materiallar", href: "/admin/materials", icon: <Package className="h-4 w-4" /> },
       { label: "Testlar", href: "/admin/quizzes", icon: <ClipboardList className="h-4 w-4" /> },
     ],
   },
@@ -76,7 +80,6 @@ const adminNav: NavGroup[] = [
       { label: "Vazifalar", href: "/admin/tasks", icon: <ListTodo className="h-4 w-4" /> },
       { label: "Ta'tillar", href: "/admin/holidays", icon: <CalendarOff className="h-4 w-4" /> },
       { label: "Hisobotlar", href: "/admin/reports", icon: <BarChart2 className="h-4 w-4" /> },
-      { label: "Bildirishnomalar", href: "/admin/notifications", icon: <Bell className="h-4 w-4" /> },
       { label: "Sozlamalar", href: "/admin/settings", icon: <Settings className="h-4 w-4" /> },
     ],
   },
@@ -124,6 +127,14 @@ export function Sidebar() {
   const pathname = usePathname();
   const { user } = useAuthStore();
   const { sidebarOpen, toggleSidebar } = useUIStore();
+
+  const { data: publicSettings } = useQuery({
+    queryKey: ["public-settings"],
+    queryFn: () => settingsApi.getPublicSettings().then((r) => r.data as { data: { center_name: string | null } }),
+    enabled: !!user,
+    staleTime: 5 * 60 * 1000,
+  });
+  const centerName = publicSettings?.data.center_name || "EduCenter Pro";
 
   const navGroups = React.useMemo(() => {
     if (!user) return [];
@@ -176,7 +187,7 @@ export function Sidebar() {
               EP
             </div>
             <div className={cn("min-w-0 transition-all", !sidebarOpen && "lg:hidden")}>
-              <p className="font-bold text-sm leading-tight truncate">EduCenter Pro</p>
+              <p className="font-bold text-sm leading-tight truncate">{centerName}</p>
               <p className="text-xs text-white/60 leading-tight">O'quv Markazi</p>
             </div>
           </div>
@@ -208,7 +219,7 @@ export function Sidebar() {
                     href={item.href}
                     onClick={handleLinkClick}
                     className={cn(
-                      "flex items-center gap-3 mx-2 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150",
+                      "flex items-center gap-3 mx-2 mb-1 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150",
                       isActive
                         ? "bg-white/20 text-white"
                         : "text-white/70 hover:bg-white/10 hover:text-white",
@@ -239,15 +250,15 @@ export function Sidebar() {
         <div className="shrink-0 border-t border-white/10 p-3">
           <div className={cn("flex items-center gap-3", !sidebarOpen && "lg:justify-center")}>
             <UserAvatar
-              name={user?.profile?.fullName || user?.email || "U"}
-              avatarUrl={user?.profile?.avatarUrl}
+              name={user?.profile?.fullName || user?.email || user?.loginId || "U"}
+              avatarUrl={user?.avatarUrl ?? user?.profile?.avatarUrl}
               size="sm"
               className="shrink-0 ring-2 ring-white/30"
             />
             <div className={cn("min-w-0 flex-1", !sidebarOpen && "lg:hidden")}>
               {user && (
                 <>
-                  <p className="text-sm font-medium truncate">{user.profile?.fullName || user.email}</p>
+                  <p className="text-sm font-medium truncate">{user.profile?.fullName || user.email || user.loginId}</p>
                   <p className="text-xs text-white/60 truncate">{roleLabel[user.role]}</p>
                 </>
               )}

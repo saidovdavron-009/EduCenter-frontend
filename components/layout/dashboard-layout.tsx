@@ -4,6 +4,8 @@ import { Sidebar } from "./Sidebar";
 import { Header } from "./Header";
 import { BottomNav } from "./BottomNav";
 import { cn } from "@/lib/utils";
+import { useAuthStore } from "@/store/authStore";
+import { authApi } from "@/lib/api";
 
 interface DashboardLayoutProps {
   children: React.ReactNode;
@@ -11,6 +13,16 @@ interface DashboardLayoutProps {
 }
 
 export function DashboardLayout({ children, title }: DashboardLayoutProps) {
+  const { user, hydrateProfile } = useAuthStore();
+
+  // Sessions started before this fix (or ADMIN accounts, which never carry a
+  // nested profile from login) are missing profile.fullName — backfill it once.
+  React.useEffect(() => {
+    if (user && !user.profile?.fullName) {
+      authApi.getProfile().then(({ data }) => hydrateProfile(data)).catch(() => {});
+    }
+  }, [user, hydrateProfile]);
+
   return (
     <div className="flex h-[100dvh] bg-[var(--background)] overflow-hidden">
       <Sidebar />

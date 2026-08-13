@@ -1,5 +1,6 @@
 "use client";
 import React from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, DollarSign, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { StatCard } from "@/components/ui/stat-card";
@@ -7,7 +8,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { formatCurrency, formatDate } from "@/lib/utils";
+import { expensesApi } from "@/lib/api";
 import toast from "react-hot-toast";
 
 type ExpenseCategory = "RENT" | "SALARY" | "UTILITY" | "OTHER";
@@ -15,8 +18,8 @@ type ExpenseCategory = "RENT" | "SALARY" | "UTILITY" | "OTHER";
 interface ExpenseRow {
   id: string;
   category: ExpenseCategory;
-  amount: number;
-  description: string;
+  amount: string;
+  description: string | null;
   date: string;
 }
 
@@ -28,45 +31,56 @@ const categoryColor: Record<ExpenseCategory, string> = {
   OTHER: "bg-gray-100 text-gray-800",
 };
 
-const initialExpenses: ExpenseRow[] = [
-  { id: "1", category: "RENT",    amount: 5000000, description: "Yanvar ijarasi",           date: "2025-01-01" },
-  { id: "2", category: "SALARY",  amount: 8000000, description: "O'qituvchilar ish haqi",   date: "2025-01-31" },
-  { id: "3", category: "UTILITY", amount: 800000,  description: "Kommunal xarajatlar",      date: "2025-01-15" },
-  { id: "4", category: "OTHER",   amount: 500000,  description: "Maktab jihozlari",         date: "2025-01-10" },
-  { id: "5", category: "RENT",    amount: 5000000, description: "Fevral ijarasi",           date: "2025-02-01" },
-  { id: "6", category: "SALARY",  amount: 8200000, description: "Fevral ish haqi",          date: "2025-02-28" },
-];
+function extractErrorMessage(error: unknown): string {
+  const data = (error as { response?: { data?: { message?: string | string[] } } })?.response?.data;
+  if (Array.isArray(data?.message)) return data.message[0];
+  return data?.message || "Xatolik yuz berdi";
+}
+
+const emptyForm = { category: "OTHER" as ExpenseCategory, amount: "", description: "", date: new Date().toISOString().split("T")[0] };
 
 export default function ExpensesPage() {
-  const [expenses, setExpenses] = React.useState(initialExpenses);
+  const queryClient = useQueryClient();
+  const confirm = useConfirm();
   const [showModal, setShowModal] = React.useState(false);
-  const [form, setForm] = React.useState({
-    category: "OTHER" as ExpenseCategory,
-    amount: "",
-    description: "",
-    date: new Date().toISOString().split("T")[0],
+  const [form, setForm] = React.useState(emptyForm);
+
+  const { data } = useQuery({
+    queryKey: ["expenses"],
+    queryFn: () => expensesApi.getAll({ limit: 100 }).then((r) => r.data as { data: ExpenseRow[] }),
+  });
+  const expenses = data?.data ?? [];
+
+  const sumByCategory = (cat: ExpenseCategory) => expenses.filter((e) => e.category === cat).reduce((s, e) => s + Number(e.amount), 0);
+  const totalExpenses = expenses.reduce((s, e) => s + Number(e.amount), 0);
+
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: ["expenses"] });
+
+  const createMutation = useMutation({
+    mutationFn: () => expensesApi.create({ category: form.category, amount: Number(form.amount), description: form.description || undefined, date: form.date }),
+    onSuccess: () => {
+      toast.success("Xarajat qo'shildi");
+      invalidate();
+      setShowModal(false);
+      setForm(emptyForm);
+    },
+    onError: (e) => toast.error(extractErrorMessage(e)),
   });
 
-  const totalExpenses = expenses.reduce((s, e) => s + e.amount, 0);
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => expensesApi.delete(id),
+    onSuccess: () => { toast.success("O'chirildi"); invalidate(); },
+    onError: (e) => toast.error(extractErrorMessage(e)),
+  });
 
   const handleAdd = () => {
     if (!form.amount || !form.date) { toast.error("Miqdor va sanani kiriting"); return; }
-    setExpenses(prev => [{
-      id: String(Date.now()),
-      category: form.category,
-      amount: Number(form.amount),
-      description: form.description,
-      date: form.date,
-    }, ...prev]);
-    toast.success("Xarajat qo'shildi");
-    setShowModal(false);
-    setForm({ category: "OTHER", amount: "", description: "", date: new Date().toISOString().split("T")[0] });
+    createMutation.mutate();
   };
 
-  const handleDelete = (id: string) => {
-    if (!confirm("O'chirishni tasdiqlaysizmi?")) return;
-    setExpenses(prev => prev.filter(e => e.id !== id));
-    toast.success("O'chirildi");
+  const handleDelete = async (id: string) => {
+    if (!(await confirm("O'chirishni tasdiqlaysizmi?"))) return;
+    deleteMutation.mutate(id);
   };
 
   return (
@@ -82,9 +96,9 @@ export default function ExpensesPage() {
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-4">
-        <StatCard title="Ijara" value={formatCurrency(expenses.filter(e => e.category === "RENT").reduce((s, e) => s + e.amount, 0))} icon={<DollarSign className="h-5 w-5" />} iconBg="bg-blue-100" />
-        <StatCard title="Ish haqi" value={formatCurrency(expenses.filter(e => e.category === "SALARY").reduce((s, e) => s + e.amount, 0))} icon={<DollarSign className="h-5 w-5" />} iconBg="bg-purple-100" />
-        <StatCard title="Kommunal" value={formatCurrency(expenses.filter(e => e.category === "UTILITY").reduce((s, e) => s + e.amount, 0))} icon={<DollarSign className="h-5 w-5" />} iconBg="bg-amber-100" />
+        <StatCard title="Ijara" value={formatCurrency(sumByCategory("RENT"))} icon={<DollarSign className="h-5 w-5" />} iconBg="bg-blue-100" />
+        <StatCard title="Ish haqi" value={formatCurrency(sumByCategory("SALARY"))} icon={<DollarSign className="h-5 w-5" />} iconBg="bg-purple-100" />
+        <StatCard title="Kommunal" value={formatCurrency(sumByCategory("UTILITY"))} icon={<DollarSign className="h-5 w-5" />} iconBg="bg-amber-100" />
         <StatCard title="Jami xarajat" value={formatCurrency(totalExpenses)} icon={<DollarSign className="h-5 w-5" />} iconBg="bg-red-100" />
       </div>
 
@@ -100,25 +114,29 @@ export default function ExpensesPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {expenses.map(row => (
-              <TableRow key={row.id}>
-                <TableCell>
-                  <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${categoryColor[row.category]}`}>
-                    {categoryLabel[row.category]}
-                  </span>
-                </TableCell>
-                <TableCell><span className="text-sm">{row.description || "—"}</span></TableCell>
-                <TableCell><span className="font-semibold text-sm text-red-600">−{formatCurrency(row.amount)}</span></TableCell>
-                <TableCell><span className="text-sm text-[var(--muted-foreground)]">{formatDate(row.date)}</span></TableCell>
-                <TableCell>
-                  <Button variant="ghost" size="icon-sm"
-                    className="text-red-500 hover:text-red-600"
-                    onClick={() => handleDelete(row.id)}>
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </TableCell>
+            {expenses.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={5} className="text-center py-12 text-[var(--muted-foreground)]">Xarajatlar topilmadi</TableCell>
               </TableRow>
-            ))}
+            ) : (
+              expenses.map((row) => (
+                <TableRow key={row.id}>
+                  <TableCell>
+                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${categoryColor[row.category]}`}>
+                      {categoryLabel[row.category]}
+                    </span>
+                  </TableCell>
+                  <TableCell><span className="text-sm">{row.description || "—"}</span></TableCell>
+                  <TableCell><span className="font-semibold text-sm text-red-600">−{formatCurrency(Number(row.amount))}</span></TableCell>
+                  <TableCell><span className="text-sm text-[var(--muted-foreground)]">{formatDate(row.date)}</span></TableCell>
+                  <TableCell>
+                    <Button variant="ghost" size="icon-sm" className="text-red-500 hover:text-red-600" onClick={() => handleDelete(row.id)}>
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
           </TableBody>
         </Table>
       </div>
@@ -129,7 +147,7 @@ export default function ExpensesPage() {
           <div className="p-6 space-y-4">
             <div>
               <label className="text-sm font-medium mb-1.5 block">Kategoriya</label>
-              <Select value={form.category} onValueChange={v => setForm(f => ({ ...f, category: v as ExpenseCategory }))}>
+              <Select value={form.category} onValueChange={(v) => setForm((f) => ({ ...f, category: v as ExpenseCategory }))}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="RENT">Ijara</SelectItem>
@@ -139,13 +157,13 @@ export default function ExpensesPage() {
                 </SelectContent>
               </Select>
             </div>
-            <Input label="Miqdor (so'm) *" type="number" value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} placeholder="5000000" />
-            <Input label="Tavsif" value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Xarajat nomi" />
-            <Input label="Sana *" type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} />
+            <Input label="Miqdor (so'm) *" type="number" value={form.amount} onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))} placeholder="5000000" />
+            <Input label="Tavsif" value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} placeholder="Xarajat nomi" />
+            <Input label="Sana *" type="date" value={form.date} onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))} />
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowModal(false)}>Bekor qilish</Button>
-            <Button onClick={handleAdd}>Saqlash</Button>
+            <Button onClick={handleAdd} loading={createMutation.isPending}>Saqlash</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

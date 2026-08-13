@@ -1,52 +1,59 @@
 "use client";
 import React from "react";
+import { useQuery } from "@tanstack/react-query";
 import { CheckCircle, XCircle, Clock, AlertCircle } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { formatDate } from "@/lib/utils";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from "recharts";
+import { useAuthStore } from "@/store/authStore";
+import { attendanceApi, studentsApi } from "@/lib/api";
 
 type AttendanceStatus = "PRESENT" | "ABSENT" | "LATE" | "EXCUSED";
+interface AttendanceRow { id: string; date: string; groupName: string; groupId?: string; status: AttendanceStatus; }
+interface StudentGroup { id: string; name: string; }
 
-const records = [
-  { id: "1", date: "2025-01-27", group: "Ingliz tili A2", status: "PRESENT" as AttendanceStatus },
-  { id: "2", date: "2025-01-25", group: "Speaking Club", status: "PRESENT" as AttendanceStatus },
-  { id: "3", date: "2025-01-24", group: "Ingliz tili A2", status: "LATE" as AttendanceStatus },
-  { id: "4", date: "2025-01-22", group: "Speaking Club", status: "PRESENT" as AttendanceStatus },
-  { id: "5", date: "2025-01-20", group: "Ingliz tili A2", status: "ABSENT" as AttendanceStatus },
-  { id: "6", date: "2025-01-18", group: "Speaking Club", status: "EXCUSED" as AttendanceStatus },
-  { id: "7", date: "2025-01-17", group: "Ingliz tili A2", status: "PRESENT" as AttendanceStatus },
-  { id: "8", date: "2025-01-15", group: "Speaking Club", status: "PRESENT" as AttendanceStatus },
-  { id: "9", date: "2025-01-13", group: "Ingliz tili A2", status: "PRESENT" as AttendanceStatus },
-  { id: "10", date: "2025-01-11", group: "Ingliz tili A2", status: "PRESENT" as AttendanceStatus },
-];
-
-const statusConfig: Record<AttendanceStatus, { label: string; icon: React.ReactNode; color: string; badgeVariant: string }> = {
-  PRESENT:  { label: "Keldi",    icon: <CheckCircle className="h-4 w-4 text-green-600" />, color: "text-green-600", badgeVariant: "success" },
-  ABSENT:   { label: "Kelmadi",  icon: <XCircle className="h-4 w-4 text-red-500" />,      color: "text-red-500",   badgeVariant: "destructive" },
-  LATE:     { label: "Kech",     icon: <Clock className="h-4 w-4 text-amber-500" />,      color: "text-amber-500", badgeVariant: "warning" },
-  EXCUSED:  { label: "Sababli",  icon: <AlertCircle className="h-4 w-4 text-blue-500" />, color: "text-blue-500",  badgeVariant: "info" },
+const statusConfig: Record<AttendanceStatus, { label: string; icon: React.ReactNode; color: string; badgeVariant: "success" | "destructive" | "warning" | "info" }> = {
+  PRESENT: { label: "Keldi", icon: <CheckCircle className="h-4 w-4 text-green-600" />, color: "text-green-600", badgeVariant: "success" },
+  ABSENT: { label: "Kelmadi", icon: <XCircle className="h-4 w-4 text-red-500" />, color: "text-red-500", badgeVariant: "destructive" },
+  LATE: { label: "Kech", icon: <Clock className="h-4 w-4 text-amber-500" />, color: "text-amber-500", badgeVariant: "warning" },
+  EXCUSED: { label: "Sababli", icon: <AlertCircle className="h-4 w-4 text-blue-500" />, color: "text-blue-500", badgeVariant: "info" },
 };
 
-const PIE_COLORS = { PRESENT: "#22c55e", ABSENT: "#ef4444", LATE: "#f59e0b", EXCUSED: "#3b82f6" };
+const PIE_COLORS: Record<AttendanceStatus, string> = { PRESENT: "#22c55e", ABSENT: "#ef4444", LATE: "#f59e0b", EXCUSED: "#3b82f6" };
 
 export default function StudentAttendancePage() {
+  const { user } = useAuthStore();
+  const studentId = user?.profile?.id;
   const [groupFilter, setGroupFilter] = React.useState("ALL");
 
-  const filtered = records.filter(r => groupFilter === "ALL" || r.group === groupFilter);
+  const { data: student } = useQuery({
+    queryKey: ["my-student-profile", studentId],
+    queryFn: () => studentsApi.getById(studentId as string).then((r) => r.data as { groups: { id: string; name: string }[] }),
+    enabled: !!studentId,
+  });
+  const myGroups: StudentGroup[] = student?.groups ?? [];
 
-  const counts = filtered.reduce((acc, r) => {
+  const { data } = useQuery({
+    queryKey: ["my-attendance", studentId, groupFilter],
+    queryFn: () => attendanceApi.getAll({ studentId, groupId: groupFilter === "ALL" ? undefined : groupFilter, limit: 200 })
+      .then((r) => r.data as { data: AttendanceRow[]; meta: { total: number } }),
+    enabled: !!studentId,
+  });
+  const records = data?.data ?? [];
+
+  const counts = records.reduce((acc, r) => {
     acc[r.status] = (acc[r.status] || 0) + 1;
     return acc;
   }, {} as Record<AttendanceStatus, number>);
 
-  const total = filtered.length;
-  const attendancePct = total ? Math.round(((counts.PRESENT || 0) / total) * 100) : 0;
+  const total = records.length;
+  const attendancePct = total ? Math.round((((counts.PRESENT || 0) + (counts.LATE || 0)) / total) * 100) : 0;
 
   const pieData = (["PRESENT", "ABSENT", "LATE", "EXCUSED"] as AttendanceStatus[])
-    .filter(s => counts[s] > 0)
-    .map(s => ({ name: statusConfig[s].label, value: counts[s], color: PIE_COLORS[s] }));
+    .filter((s) => counts[s] > 0)
+    .map((s) => ({ name: statusConfig[s].label, value: counts[s], color: PIE_COLORS[s] }));
 
   return (
     <div className="space-y-4 sm:space-y-6">
@@ -56,7 +63,7 @@ export default function StudentAttendancePage() {
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {(["PRESENT", "ABSENT", "LATE", "EXCUSED"] as AttendanceStatus[]).map(s => (
+        {(["PRESENT", "ABSENT", "LATE", "EXCUSED"] as AttendanceStatus[]).map((s) => (
           <Card key={s}>
             <CardContent className="pt-5">
               <div className="flex items-center gap-2 mb-1">
@@ -98,15 +105,19 @@ export default function StudentAttendancePage() {
         <Card>
           <CardHeader><CardTitle>Taqsimot</CardTitle></CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={160}>
-              <PieChart>
-                <Pie data={pieData} cx="50%" cy="50%" innerRadius={40} outerRadius={65} dataKey="value" paddingAngle={3}>
-                  {pieData.map((entry, idx) => <Cell key={idx} fill={entry.color} />)}
-                </Pie>
-                <Tooltip />
-                <Legend iconType="circle" iconSize={8} />
-              </PieChart>
-            </ResponsiveContainer>
+            {pieData.length > 0 ? (
+              <ResponsiveContainer width="100%" height={160}>
+                <PieChart>
+                  <Pie data={pieData} cx="50%" cy="50%" innerRadius={40} outerRadius={65} dataKey="value" paddingAngle={3}>
+                    {pieData.map((entry, idx) => <Cell key={idx} fill={entry.color} />)}
+                  </Pie>
+                  <Tooltip />
+                  <Legend iconType="circle" iconSize={8} />
+                </PieChart>
+              </ResponsiveContainer>
+            ) : (
+              <p className="text-center text-[var(--muted-foreground)] text-sm py-8">Ma'lumot yo'q</p>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -116,8 +127,7 @@ export default function StudentAttendancePage() {
           <SelectTrigger className="w-48 h-9"><SelectValue placeholder="Guruh" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="ALL">Barcha guruhlar</SelectItem>
-            <SelectItem value="Ingliz tili A2">Ingliz tili A2</SelectItem>
-            <SelectItem value="Speaking Club">Speaking Club</SelectItem>
+            {myGroups.map((g) => <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>)}
           </SelectContent>
         </Select>
       </div>
@@ -126,18 +136,19 @@ export default function StudentAttendancePage() {
         <CardHeader><CardTitle>Davomat tarixi</CardTitle></CardHeader>
         <CardContent className="p-0">
           <div className="divide-y divide-[var(--border)]">
-            {filtered.map(r => {
+            {records.map((r) => {
               const cfg = statusConfig[r.status];
               return (
                 <div key={r.id} className="flex items-center gap-4 px-5 py-3">
                   <div className="flex-1">
-                    <p className="font-medium text-sm">{r.group}</p>
+                    <p className="font-medium text-sm">{r.groupName}</p>
                     <p className="text-xs text-[var(--muted-foreground)]">{formatDate(r.date)}</p>
                   </div>
-                  <Badge variant={cfg.badgeVariant as any}>{cfg.label}</Badge>
+                  <Badge variant={cfg.badgeVariant}>{cfg.label}</Badge>
                 </div>
               );
             })}
+            {records.length === 0 && <p className="text-center text-[var(--muted-foreground)] text-sm py-8">Ma'lumot yo'q</p>}
           </div>
         </CardContent>
       </Card>
