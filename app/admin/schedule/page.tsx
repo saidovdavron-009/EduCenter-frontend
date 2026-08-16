@@ -2,13 +2,12 @@
 import React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, Trash2 } from "lucide-react";
-import { schedulesApi, groupsApi } from "@/lib/api";
+import { schedulesApi, groupsApi, branchesApi, roomsApi } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Modal, ModalHeader, ModalTitle, ModalFooter } from "@/components/ui/modal";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Input } from "@/components/ui/input";
 import { getDayShort } from "@/lib/utils";
 import type { DayOfWeek } from "@/types";
 import toast from "react-hot-toast";
@@ -27,6 +26,8 @@ interface WeeklyItem {
 }
 
 interface GroupOption { id: string; name: string; }
+interface BranchOption { id: string; name: string; }
+interface RoomOption { id: string; name: string; isActive: boolean; }
 
 const DAYS: DayOfWeek[] = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
 const SUBJECT_COLORS = [
@@ -50,7 +51,7 @@ function extractErrorMessage(error: unknown): string {
   return data?.message || "Xatolik yuz berdi";
 }
 
-const emptyForm = { groupId: "", dayOfWeek: "MON" as DayOfWeek, startTime: "09:00", endTime: "11:00", room: "" };
+const emptyForm = { groupId: "", dayOfWeek: "MON" as DayOfWeek, startTime: "09:00", endTime: "11:00", branchId: "", room: "" };
 
 export default function SchedulePage() {
   const queryClient = useQueryClient();
@@ -69,13 +70,29 @@ export default function SchedulePage() {
   });
   const groups = groupsRes?.data ?? [];
 
+  const { data: branchesRes } = useQuery({
+    queryKey: ["branches-options"],
+    queryFn: () => branchesApi.getAll({ limit: 100 }).then((r) => r.data as { data: BranchOption[] }),
+  });
+  const branches = branchesRes?.data ?? [];
+
+  const { data: roomsRes } = useQuery({
+    queryKey: ["rooms-options", form.branchId],
+    queryFn: () => roomsApi.getAll({ branchId: form.branchId, limit: 100 }).then((r) => r.data as { data: RoomOption[] }),
+    enabled: !!form.branchId,
+  });
+  const rooms = (roomsRes?.data ?? []).filter((r) => r.isActive);
+
   const getSchedulesForDay = (day: DayOfWeek) => weekly[day] ?? [];
   const allSchedules = DAYS.flatMap((d) => getSchedulesForDay(d));
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ["schedules-weekly"] });
 
   const createMutation = useMutation({
-    mutationFn: () => schedulesApi.create({ ...form, room: form.room || undefined }),
+    mutationFn: () => {
+      const { branchId, ...rest } = form;
+      return schedulesApi.create({ ...rest, room: form.room || undefined });
+    },
     onSuccess: () => { toast.success("Dars qo'shildi"); invalidate(); setOpen(false); setForm(emptyForm); },
     onError: (e) => toast.error(extractErrorMessage(e)),
   });
@@ -201,7 +218,24 @@ export default function SchedulePage() {
                 className="w-full h-9 px-3 rounded-lg border border-[var(--border)] bg-[var(--card)] text-sm focus:outline-none focus:ring-2 focus:ring-[#1E3A5F]" />
             </div>
           </div>
-          <Input label="Xona" value={form.room} onChange={(e) => setForm((f) => ({ ...f, room: e.target.value }))} placeholder="201-xona" />
+          <div>
+            <label className="text-sm font-medium mb-1.5 block">Filial *</label>
+            <Select value={form.branchId} onValueChange={(v) => setForm((f) => ({ ...f, branchId: v, room: "" }))}>
+              <SelectTrigger><SelectValue placeholder="Filialni tanlang" /></SelectTrigger>
+              <SelectContent>
+                {branches.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <label className="text-sm font-medium mb-1.5 block">Xona</label>
+            <Select value={form.room} onValueChange={(v) => setForm((f) => ({ ...f, room: v }))} disabled={!form.branchId}>
+              <SelectTrigger><SelectValue placeholder={form.branchId ? "Xonani tanlang" : "Avval filialni tanlang"} /></SelectTrigger>
+              <SelectContent>
+                {rooms.map((r) => <SelectItem key={r.id} value={r.name}>{r.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
         <ModalFooter>
           <Button variant="outline" onClick={() => setOpen(false)}>Bekor</Button>

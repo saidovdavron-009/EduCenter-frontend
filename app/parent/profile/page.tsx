@@ -8,6 +8,7 @@ import { UserAvatar } from "@/components/ui/avatar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { parentsApi, authApi, gradesApi, attendanceApi, uploadsApi } from "@/lib/api";
+import { formatPhone, formatPhoneInput } from "@/lib/utils";
 import toast from "react-hot-toast";
 
 interface ParentDetail {
@@ -152,7 +153,7 @@ export default function ParentProfilePage() {
                 </span>
               </div>
               <p className="text-sm text-[var(--muted-foreground)] mt-2">ID: {parent?.loginId ?? user?.loginId ?? "—"}</p>
-              <p className="text-sm text-[var(--muted-foreground)]">{form.phone}</p>
+              <p className="text-sm text-[var(--muted-foreground)]">{form.phone ? formatPhone(form.phone) : ""}</p>
             </div>
           </div>
         </CardContent>
@@ -191,7 +192,7 @@ export default function ParentProfilePage() {
               <label className="block text-sm font-medium mb-1.5">Telefon</label>
               <div className="relative">
                 <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--muted-foreground)]" />
-                <input value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
+                <input value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: formatPhoneInput(e.target.value) }))}
                   className="w-full h-10 pl-9 pr-3 rounded-lg border border-[var(--border)] bg-[var(--background)] text-sm focus:outline-none focus:ring-2 focus:ring-[#1E3A5F]" />
               </div>
             </div>
@@ -238,7 +239,7 @@ export default function ParentProfilePage() {
       <Card className="border-red-200">
         <CardHeader><CardTitle className="text-red-600">Tizimdan chiqish</CardTitle></CardHeader>
         <CardContent>
-          <Button variant="outline" className="border-red-300 text-red-600 hover:bg-red-50" onClick={() => { logout(); router.push("/login"); }}>
+          <Button variant="outline" className="border-red-300 text-red-600 hover:bg-red-50" onClick={() => { logout(); router.push("/student/login"); }}>
             <LogOut className="h-4 w-4" />Chiqish
           </Button>
         </CardContent>

@@ -8,7 +8,9 @@ import { Modal, ModalHeader, ModalTitle, ModalFooter } from "@/components/ui/mod
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { branchesApi, teachersApi } from "@/lib/api";
+import { formatPhone, formatPhoneInput } from "@/lib/utils";
 import toast from "react-hot-toast";
 
 interface Branch {
@@ -28,7 +30,7 @@ function extractErrorMessage(error: unknown): string {
 }
 
 const NO_MANAGER = "__none__";
-const empty = { name: "", address: "", phone: "", managerId: NO_MANAGER };
+const empty = { name: "", address: "", phone: "", managerId: NO_MANAGER, isActive: true };
 
 export default function BranchesPage() {
   const queryClient = useQueryClient();
@@ -71,6 +73,7 @@ export default function BranchesPage() {
       address: form.address || undefined,
       phone: form.phone || undefined,
       managerId: form.managerId === NO_MANAGER ? undefined : form.managerId,
+      isActive: form.isActive,
     }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["branches"] });
@@ -90,7 +93,7 @@ export default function BranchesPage() {
   });
 
   const openAdd = () => { setEditId(null); setForm(empty); setOpen(true); };
-  const openEdit = (b: Branch) => { setEditId(b.id); setForm({ name: b.name, address: b.address ?? "", phone: b.phone ?? "", managerId: b.managerId ?? NO_MANAGER }); setOpen(true); };
+  const openEdit = (b: Branch) => { setEditId(b.id); setForm({ name: b.name, address: b.address ?? "", phone: b.phone ?? "", managerId: b.managerId ?? NO_MANAGER, isActive: b.isActive }); setOpen(true); };
 
   const handleSave = () => {
     if (!form.name.trim()) { toast.error("Filial nomini kiriting"); return; }
@@ -133,7 +136,7 @@ export default function BranchesPage() {
               </div>
               <div className="space-y-1.5 text-xs text-[var(--muted-foreground)]">
                 {b.address && <div className="flex items-center gap-1.5"><MapPin className="h-3.5 w-3.5 shrink-0" />{b.address}</div>}
-                {b.phone && <div className="flex items-center gap-1.5"><Phone className="h-3.5 w-3.5 shrink-0" />{b.phone}</div>}
+                {b.phone && <div className="flex items-center gap-1.5"><Phone className="h-3.5 w-3.5 shrink-0" />{formatPhone(b.phone)}</div>}
                 {b.managerId && <p>Menejer: {teacherMap.get(b.managerId) ?? "—"}</p>}
               </div>
             </CardContent>
@@ -149,7 +152,7 @@ export default function BranchesPage() {
         <div className="p-6 space-y-3">
           <Input label="Filial nomi *" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Markaz filiali" />
           <Input label="Manzil" value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} placeholder="Toshkent sh., ..." />
-          <Input label="Telefon" value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} placeholder="+998 71 ..." />
+          <Input label="Telefon" value={form.phone} onChange={e => setForm(f => ({ ...f, phone: formatPhoneInput(e.target.value) }))} placeholder="+998 71 ..." />
           <div>
             <label className="text-sm font-medium mb-1.5 block">Menejer</label>
             <Select value={form.managerId} onValueChange={(v) => setForm(f => ({ ...f, managerId: v }))}>
@@ -160,6 +163,12 @@ export default function BranchesPage() {
               </SelectContent>
             </Select>
           </div>
+          {editId && (
+            <div className="flex items-center justify-between pt-1">
+              <label className="text-sm font-medium">Faol</label>
+              <Switch checked={form.isActive} onCheckedChange={(v) => setForm(f => ({ ...f, isActive: v }))} />
+            </div>
+          )}
         </div>
         <ModalFooter>
           <Button variant="outline" onClick={() => setOpen(false)}>Bekor</Button>

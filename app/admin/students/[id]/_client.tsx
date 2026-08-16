@@ -118,7 +118,7 @@ export default function StudentDetailPage({ params }: { params: Promise<{ id: st
                   {getStatusLabel(student?.status || "ACTIVE")}
                 </span>
               </div>
-              <Link href={`/admin/students/${id}/edit`} className="w-full">
+              <Link href={`/admin/students/${id}/edit?back=/admin/students/${id}`} className="w-full">
                 <Button variant="outline" size="sm" className="w-full"><Pencil className="h-3.5 w-3.5" />Tahrirlash</Button>
               </Link>
             </div>

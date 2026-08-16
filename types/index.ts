@@ -266,6 +266,7 @@ export interface AuthUser {
   loginId: string | null;
   role: UserRole;
   isActive: boolean;
+  isSuperAdmin?: boolean;
   avatarUrl?: string | null;
   profile?: {
     id: string;

@@ -11,13 +11,15 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { subjectsApi, teachersApi, groupsApi, schedulesApi } from "@/lib/api";
+import { subjectsApi, teachersApi, branchesApi, roomsApi, groupsApi, schedulesApi } from "@/lib/api";
+import { formatCurrency } from "@/lib/utils";
 import toast from "react-hot-toast";
 
 const schema = z.object({
   name: z.string().min(2, "Kamida 2 ta belgi"),
   subjectId: z.string().min(1, "Fanni tanlang"),
   teacherId: z.string().min(1, "O'qituvchini tanlang"),
+  branchId: z.string().min(1, "Filialni tanlang"),
   capacity: z.coerce.number().min(1).max(30),
   monthlyFee: z.coerce.number().min(0),
   room: z.string().optional(),
@@ -28,14 +30,17 @@ type FormData = {
   name: string;
   subjectId: string;
   teacherId: string;
+  branchId: string;
   capacity: number;
   monthlyFee: number;
   room?: string;
   description?: string;
 };
 
-interface SubjectOption { id: string; name: string; }
+interface SubjectOption { id: string; name: string; monthlyFee: number; }
 interface TeacherOption { id: string; fullName: string; }
+interface BranchOption { id: string; name: string; }
+interface RoomOption { id: string; name: string; isActive: boolean; }
 
 const DAYS = ["MON", "TUE", "WED", "THU", "FRI", "SAT"];
 const DAY_LABELS: Record<string, string> = {
@@ -57,6 +62,7 @@ export default function NewGroupPage() {
   const [endTime, setEndTime] = React.useState("11:00");
   const [subjectId, setSubjectId] = React.useState("");
   const [teacherId, setTeacherId] = React.useState("");
+  const [branchId, setBranchId] = React.useState("");
 
   const { data: subjectsRes } = useQuery({
     queryKey: ["subjects-options"],
@@ -70,20 +76,42 @@ export default function NewGroupPage() {
   });
   const teachers = teachersRes?.data ?? [];
 
+  const { data: branchesRes } = useQuery({
+    queryKey: ["branches-options"],
+    queryFn: () => branchesApi.getAll({ limit: 100 }).then((r) => r.data as { data: BranchOption[] }),
+  });
+  const branches = branchesRes?.data ?? [];
+
+  const { data: roomsRes } = useQuery({
+    queryKey: ["rooms-options", branchId],
+    queryFn: () => roomsApi.getAll({ branchId, limit: 100 }).then((r) => r.data as { data: RoomOption[] }),
+    enabled: !!branchId,
+  });
+  const rooms = (roomsRes?.data ?? []).filter((r) => r.isActive);
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { register, handleSubmit, setValue, formState: { errors } } = useForm<FormData>({
+  const { register, handleSubmit, setValue, watch, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema) as any,
-    defaultValues: { capacity: 12 as any, monthlyFee: 500000 as any }
+    defaultValues: { capacity: 12 as any, monthlyFee: 0 as any }
   });
 
   const onSubjectChange = (v: string) => {
     setSubjectId(v);
     setValue("subjectId", v, { shouldValidate: true });
+    const subject = subjects.find((s) => s.id === v);
+    setValue("monthlyFee", subject?.monthlyFee ?? 0, { shouldValidate: true });
   };
+  const selectedSubjectFee = subjects.find((s) => s.id === subjectId)?.monthlyFee;
 
   const onTeacherChange = (v: string) => {
     setTeacherId(v);
     setValue("teacherId", v, { shouldValidate: true });
+  };
+
+  const onBranchChange = (v: string) => {
+    setBranchId(v);
+    setValue("branchId", v, { shouldValidate: true });
+    setValue("room", "");
   };
 
   const toggleDay = (day: string) => {
@@ -163,12 +191,44 @@ export default function NewGroupPage() {
               {errors.teacherId && <p className="text-xs text-red-500 mt-1">{errors.teacherId.message}</p>}
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <Input label="Sig'imi (o'quvchi) *" type="number" error={errors.capacity?.message} {...register("capacity")} />
-              <Input label="Oylik to'lov (so'm) *" type="number" error={errors.monthlyFee?.message} {...register("monthlyFee")} />
+            <div>
+              <label className="text-sm font-medium mb-1.5 block">Filial *</label>
+              <Select value={branchId} onValueChange={onBranchChange}>
+                <SelectTrigger className={errors.branchId ? "border-red-500" : ""}>
+                  <SelectValue placeholder="Filialni tanlang" />
+                </SelectTrigger>
+                <SelectContent>
+                  {branches.map(b => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <input type="hidden" {...register("branchId")} />
+              {errors.branchId && <p className="text-xs text-red-500 mt-1">{errors.branchId.message}</p>}
             </div>
 
-            <Input label="Xona" placeholder="201-xona" {...register("room")} />
+            <div className="grid grid-cols-2 gap-4">
+              <Input label="Sig'imi (o'quvchi) *" type="number" error={errors.capacity?.message} {...register("capacity")} />
+              <div>
+                <label className="text-sm font-medium mb-1.5 block">Oylik to'lov</label>
+                <div className="flex h-9 w-full items-center rounded-lg border border-[var(--border)] bg-[var(--muted)] px-3 text-sm text-[var(--foreground)]">
+                  {subjectId ? formatCurrency(selectedSubjectFee ?? 0) : "Avval fanni tanlang"}
+                </div>
+                <input type="hidden" {...register("monthlyFee")} />
+                {errors.monthlyFee && <p className="text-xs text-red-500 mt-1">{errors.monthlyFee.message}</p>}
+              </div>
+            </div>
+
+            <div>
+              <label className="text-sm font-medium mb-1.5 block">Xona</label>
+              <Select value={watch("room") ?? ""} onValueChange={(v) => setValue("room", v)} disabled={!branchId}>
+                <SelectTrigger>
+                  <SelectValue placeholder={branchId ? "Xonani tanlang" : "Avval filialni tanlang"} />
+                </SelectTrigger>
+                <SelectContent>
+                  {rooms.map((r) => <SelectItem key={r.id} value={r.name}>{r.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <input type="hidden" {...register("room")} />
+            </div>
           </CardContent>
         </Card>
 

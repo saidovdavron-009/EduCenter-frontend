@@ -10,12 +10,12 @@ import { Modal, ModalHeader, ModalTitle, ModalFooter } from "@/components/ui/mod
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { formatCurrency } from "@/lib/utils";
-import { teacherSalariesApi, teachersApi } from "@/lib/api";
+import { staffSalariesApi } from "@/lib/api";
 import toast from "react-hot-toast";
 
 interface SalaryRow {
   id: string;
-  teacherId: string;
+  employeeId: string;
   baseAmount: number;
   bonus: number;
   fine: number;
@@ -26,7 +26,7 @@ interface SalaryRow {
   paidAt: string | null;
   note: string | null;
 }
-interface TeacherOption { id: string; fullName: string; }
+interface EmployeeOption { id: string; fullName: string; role: "ADMIN" | "TEACHER"; }
 
 function extractErrorMessage(error: unknown): string {
   const data = (error as { response?: { data?: { message?: string | string[] } } })?.response?.data;
@@ -38,6 +38,10 @@ function totalOf(s: SalaryRow) {
   return Number(s.baseAmount) + Number(s.bonus) - Number(s.fine);
 }
 
+function roleLabel(role?: string) {
+  return role === "TEACHER" ? "O'qituvchi" : "Admin";
+}
+
 function currentMonthRange() {
   const now = new Date();
   const start = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split("T")[0];
@@ -45,7 +49,7 @@ function currentMonthRange() {
   return { start, end };
 }
 
-const emptyForm = { teacherId: "", baseAmount: "", bonus: "", fine: "", note: "" };
+const emptyForm = { employeeId: "", baseAmount: "", bonus: "", fine: "", note: "" };
 
 export default function SalariesPage() {
   const queryClient = useQueryClient();
@@ -55,25 +59,25 @@ export default function SalariesPage() {
   const [period, setPeriod] = React.useState(currentMonthRange());
 
   const { data } = useQuery({
-    queryKey: ["teacher-salaries", period],
-    queryFn: () => teacherSalariesApi.getAll({ limit: 200 }).then((r) => r.data as { data: SalaryRow[]; meta: { total: number } }),
+    queryKey: ["staff-salaries", period],
+    queryFn: () => staffSalariesApi.getAll({ limit: 200 }).then((r) => r.data as { data: SalaryRow[]; meta: { total: number } }),
   });
   const all = data?.data ?? [];
   const filtered = all.filter((s) => s.periodStart === period.start);
 
-  const { data: teachersRes } = useQuery({
-    queryKey: ["teachers-options"],
-    queryFn: () => teachersApi.getAll({ limit: 200 }).then((r) => r.data as { data: TeacherOption[] }),
+  const { data: employeesRes } = useQuery({
+    queryKey: ["staff-salaries-employees"],
+    queryFn: () => staffSalariesApi.getEmployees().then((r) => r.data as EmployeeOption[]),
   });
-  const teachers = teachersRes?.data ?? [];
-  const teacherMap = React.useMemo(() => new Map(teachers.map((t) => [t.id, t.fullName])), [teachers]);
+  const employees = employeesRes ?? [];
+  const employeeMap = React.useMemo(() => new Map(employees.map((e) => [e.id, e])), [employees]);
 
   const unpaidTotal = filtered.filter((s) => !s.isPaid).reduce((a, s) => a + totalOf(s), 0);
   const paidTotal = filtered.filter((s) => s.isPaid).reduce((a, s) => a + totalOf(s), 0);
 
   const createMutation = useMutation({
-    mutationFn: () => teacherSalariesApi.create({
-      teacherId: form.teacherId,
+    mutationFn: () => staffSalariesApi.create({
+      employeeId: form.employeeId,
       baseAmount: Number(form.baseAmount),
       bonus: form.bonus ? Number(form.bonus) : undefined,
       fine: form.fine ? Number(form.fine) : undefined,
@@ -82,7 +86,7 @@ export default function SalariesPage() {
       note: form.note || undefined,
     }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["teacher-salaries"] });
+      queryClient.invalidateQueries({ queryKey: ["staff-salaries"] });
       toast.success("Maosh yozuvi qo'shildi");
       setOpen(false);
       setForm(emptyForm);
@@ -91,9 +95,9 @@ export default function SalariesPage() {
   });
 
   const payMutation = useMutation({
-    mutationFn: (id: string) => teacherSalariesApi.pay(id),
+    mutationFn: (id: string) => staffSalariesApi.pay(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["teacher-salaries"] });
+      queryClient.invalidateQueries({ queryKey: ["staff-salaries"] });
       toast.success("Maosh to'landi");
       setPayId(null);
     },
@@ -101,7 +105,7 @@ export default function SalariesPage() {
   });
 
   const handleSave = () => {
-    if (!form.teacherId || !form.baseAmount) { toast.error("O'qituvchi va asosiy maoshni kiriting"); return; }
+    if (!form.employeeId || !form.baseAmount) { toast.error("Xodim va asosiy maoshni kiriting"); return; }
     createMutation.mutate();
   };
 
@@ -111,7 +115,7 @@ export default function SalariesPage() {
     <div className="space-y-4 sm:space-y-5">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl sm:text-2xl font-bold">O'qituvchi maoshlari</h1>
+          <h1 className="text-xl sm:text-2xl font-bold">Xodimlar maoshlari</h1>
           <p className="text-sm text-[var(--muted-foreground)] mt-1">{filtered.filter((s) => !s.isPaid).length} ta to'lanmagan</p>
         </div>
         <div className="flex gap-2">
@@ -119,7 +123,7 @@ export default function SalariesPage() {
             const [y, m] = e.target.value.split("-").map(Number);
             setPeriod({ start: new Date(y, m - 1, 1).toISOString().split("T")[0], end: new Date(y, m, 0).toISOString().split("T")[0] });
           }} className="max-w-[160px]" />
-          <Button onClick={() => { setForm(emptyForm); setOpen(true); }}><Plus className="h-4 w-4" />Yozuv qo'shish</Button>
+          <Button onClick={() => { setForm(emptyForm); setOpen(true); }}><Plus className="h-4 w-4" />To'lash</Button>
         </div>
       </div>
 
@@ -131,12 +135,16 @@ export default function SalariesPage() {
 
       <div className="space-y-3">
         {filtered.map((s) => {
-          const name = teacherMap.get(s.teacherId) ?? "Noma'lum";
+          const employee = employeeMap.get(s.employeeId);
+          const name = employee?.fullName ?? "Noma'lum";
           return (
             <div key={s.id} className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-4 flex items-center gap-4">
               <UserAvatar name={name} size="md" className="shrink-0" />
               <div className="flex-1 min-w-0">
-                <p className="font-semibold text-sm">{name}</p>
+                <div className="flex items-center gap-2">
+                  <p className="font-semibold text-sm">{name}</p>
+                  <Badge variant="outline" className="text-[10px]">{roleLabel(employee?.role)}</Badge>
+                </div>
                 <div className="flex flex-wrap gap-x-4 gap-y-0.5 mt-1 text-xs text-[var(--muted-foreground)]">
                   <span>Asosiy: {formatCurrency(s.baseAmount)}</span>
                   {Number(s.bonus) > 0 && <span className="text-green-600">+Bonus: {formatCurrency(s.bonus)}</span>}
@@ -162,9 +170,9 @@ export default function SalariesPage() {
           <ModalHeader><ModalTitle>Maosh to'lash</ModalTitle></ModalHeader>
           <div className="p-6 space-y-3">
             <div className="flex items-center gap-3 mb-4">
-              <UserAvatar name={teacherMap.get(detail.teacherId) ?? "?"} size="md" />
+              <UserAvatar name={employeeMap.get(detail.employeeId)?.fullName ?? "?"} size="md" />
               <div>
-                <p className="font-semibold">{teacherMap.get(detail.teacherId) ?? "Noma'lum"}</p>
+                <p className="font-semibold">{employeeMap.get(detail.employeeId)?.fullName ?? "Noma'lum"}</p>
                 <p className="text-sm text-[var(--muted-foreground)]">{detail.periodStart} — {detail.periodEnd}</p>
               </div>
             </div>
@@ -183,14 +191,14 @@ export default function SalariesPage() {
       )}
 
       <Modal open={open} onOpenChange={setOpen} size="sm">
-        <ModalHeader><ModalTitle>Yangi maosh yozuvi — {period.start.slice(0, 7)}</ModalTitle></ModalHeader>
+        <ModalHeader><ModalTitle>Xodimga to'lash — {period.start.slice(0, 7)}</ModalTitle></ModalHeader>
         <div className="p-6 space-y-3">
           <div>
-            <label className="text-sm font-medium mb-1.5 block">O'qituvchi *</label>
-            <Select value={form.teacherId} onValueChange={(v) => setForm((f) => ({ ...f, teacherId: v }))}>
+            <label className="text-sm font-medium mb-1.5 block">Xodim *</label>
+            <Select value={form.employeeId} onValueChange={(v) => setForm((f) => ({ ...f, employeeId: v }))}>
               <SelectTrigger><SelectValue placeholder="Tanlang" /></SelectTrigger>
               <SelectContent>
-                {teachers.map((t) => <SelectItem key={t.id} value={t.id}>{t.fullName}</SelectItem>)}
+                {employees.map((e) => <SelectItem key={e.id} value={e.id}>{e.fullName} — {roleLabel(e.role)}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>

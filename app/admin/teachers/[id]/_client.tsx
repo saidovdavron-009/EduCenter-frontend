@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { UserAvatar } from "@/components/ui/avatar";
-import { formatCurrency, formatDate } from "@/lib/utils";
+import { formatCurrency, formatDate, formatPhone } from "@/lib/utils";
 import { teachersApi, gradesApi } from "@/lib/api";
 
 interface TeacherGroup {
@@ -27,6 +27,7 @@ interface TeacherDetail {
   phone: string;
   subjects: string[];
   experience: number | null;
+  maxGroups: number | null;
   salaryType: "MONTHLY" | "HOURLY";
   salary: number;
   isActive: boolean;
@@ -67,14 +68,16 @@ export default function TeacherDetailPage({ params }: { params: Promise<{ id: st
   return (
     <div className="space-y-4 sm:space-y-6">
       <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon-sm" onClick={() => router.back()}>
-          <ArrowLeft className="h-4 w-4" />
-        </Button>
+        <Link href="/admin/teachers">
+          <Button variant="ghost" size="icon-sm">
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+        </Link>
         <div className="flex-1">
           <h1 className="text-xl sm:text-2xl font-bold">{teacher?.fullName}</h1>
           <p className="text-sm text-[var(--muted-foreground)] mt-0.5">{teacher?.subjects.join(", ")} • {teacher?.experience ?? 0} yil tajriba</p>
         </div>
-        <Link href={`/admin/teachers/${id}/edit`}>
+        <Link href={`/admin/teachers/${id}/edit?back=/admin/teachers/${id}`}>
           <Button variant="outline" size="sm"><Edit className="h-4 w-4" />Tahrirlash</Button>
         </Link>
       </div>
@@ -95,7 +98,7 @@ export default function TeacherDetailPage({ params }: { params: Promise<{ id: st
               <div className="mt-4 space-y-2 border-t border-[var(--border)] pt-4">
                 <div className="flex items-center gap-2 text-sm">
                   <Phone className="h-4 w-4 text-[var(--muted-foreground)]" />
-                  <span>{teacher?.phone}</span>
+                  <span>{teacher?.phone ? formatPhone(teacher.phone) : "—"}</span>
                 </div>
                 <div className="flex items-center gap-2 text-sm">
                   <KeyRound className="h-4 w-4 text-[var(--muted-foreground)]" />
@@ -135,7 +138,7 @@ export default function TeacherDetailPage({ params }: { params: Promise<{ id: st
           <div className="grid grid-cols-3 gap-4">
             <Card><CardContent className="pt-5">
               <p className="text-xs text-[var(--muted-foreground)]">Guruhlar</p>
-              <p className="text-2xl font-bold mt-1">{groups.length}</p>
+              <p className="text-2xl font-bold mt-1">{groups.length}{teacher?.maxGroups != null ? ` / ${teacher.maxGroups}` : ""}</p>
             </CardContent></Card>
             <Card><CardContent className="pt-5">
               <p className="text-xs text-[var(--muted-foreground)]">O'quvchilar</p>

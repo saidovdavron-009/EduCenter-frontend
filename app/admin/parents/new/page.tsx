@@ -8,6 +8,7 @@ import { ArrowLeft, Save, Copy, Eye, EyeOff, CheckCircle2 } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { parentsApi, studentsApi } from "@/lib/api";
+import { formatPhoneInput } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -133,7 +134,7 @@ export default function NewParentPage() {
             <div className="sm:col-span-2">
               <Input label="To'liq ismi *" placeholder="Ism Familya" error={errors.fullName?.message} {...register("fullName")} />
             </div>
-            <Input label="Telefon *" placeholder="+998 90 123 45 67" error={errors.phone?.message} {...register("phone")} />
+            <Input label="Telefon *" placeholder="+998 90 123 45 67" error={errors.phone?.message} {...register("phone", { onChange: (e) => { e.target.value = formatPhoneInput(e.target.value); } })} />
           </CardContent>
         </Card>
 

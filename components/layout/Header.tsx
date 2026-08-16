@@ -8,7 +8,7 @@ import { useAuthStore } from "@/store/authStore";
 import { Button } from "@/components/ui/button";
 import { UserAvatar } from "@/components/ui/avatar";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
-import { cn } from "@/lib/utils";
+import { cn, getLoginRoute } from "@/lib/utils";
 import { notificationsApi } from "@/lib/api";
 
 interface HeaderProps {
@@ -28,8 +28,9 @@ export function Header({ title }: HeaderProps) {
   const unreadCount = notifData?.meta?.unreadCount ?? 0;
 
   const handleLogout = () => {
+    const loginRoute = getLoginRoute(user?.role);
     logout();
-    router.push("/login");
+    router.push(loginRoute);
   };
 
   const getRoleProfile = () => {
@@ -38,7 +39,7 @@ export function Header({ title }: HeaderProps) {
       case "TEACHER": return "/teacher/profile";
       case "STUDENT": return "/student/profile";
       case "PARENT": return "/parent/profile";
-      default: return "/login";
+      default: return getLoginRoute(user?.role);
     }
   };
 
@@ -48,7 +49,7 @@ export function Header({ title }: HeaderProps) {
       case "TEACHER": return "/teacher/notifications";
       case "STUDENT": return "/student/notifications";
       case "PARENT": return "/parent/notifications";
-      default: return "/login";
+      default: return getLoginRoute(user?.role);
     }
   };
 

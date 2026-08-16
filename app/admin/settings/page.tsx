@@ -1,11 +1,11 @@
 "use client";
 import React from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Save, Building2, Bell, Lock, Globe } from "lucide-react";
+import { Save, Building2, Bell, Globe } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { formatDate } from "@/lib/utils";
+import { formatDate, formatPhoneInput } from "@/lib/utils";
 import { useUIStore } from "@/store/uiStore";
 import { settingsApi } from "@/lib/api";
 import toast from "react-hot-toast";
@@ -15,7 +15,6 @@ interface SettingRow { id: string; key: string; value: string | null; type: stri
 const FIELD_KEYS = [
   "center_name", "center_phone", "center_email", "center_address",
   "eskiz_sms_key", "telegram_bot_token", "sendgrid_api_key",
-  "click_merchant_id", "payme_merchant_id", "uzum_api_key",
 ] as const;
 type FieldKey = typeof FIELD_KEYS[number];
 
@@ -70,6 +69,9 @@ export default function SettingsPage() {
   const set = (key: FieldKey) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm((f) => ({ ...f, [key]: e.target.value }));
 
+  const setPhone = (key: FieldKey) => (e: React.ChangeEvent<HTMLInputElement>) =>
+    setForm((f) => ({ ...f, [key]: formatPhoneInput(e.target.value) }));
+
   return (
     <div className="space-y-6 max-w-2xl">
       <div>
@@ -86,7 +88,7 @@ export default function SettingsPage() {
         <CardContent className="space-y-4">
           <Input label="Markaz nomi" value={form.center_name} onChange={set("center_name")} placeholder="EduCenter Pro" />
           <div className="grid grid-cols-2 gap-4">
-            <Input label="Telefon" value={form.center_phone} onChange={set("center_phone")} placeholder="+998 71 123 45 67" />
+            <Input label="Telefon" value={form.center_phone} onChange={setPhone("center_phone")} placeholder="+998 71 123 45 67" />
             <Input label="Email" value={form.center_email} onChange={set("center_email")} placeholder="info@educenter.uz" />
           </div>
           <Input label="Manzil" value={form.center_address} onChange={set("center_address")} placeholder="Toshkent sh., Chilonzor t." />
@@ -127,19 +129,6 @@ export default function SettingsPage() {
           <Input label="SMS API kaliti (Eskiz)" type="password" value={form.eskiz_sms_key} onChange={set("eskiz_sms_key")} placeholder="Eskiz SMS API key" />
           <Input label="Telegram Bot token" type="password" value={form.telegram_bot_token} onChange={set("telegram_bot_token")} placeholder="Bot token" />
           <Input label="SendGrid API kaliti" type="password" value={form.sendgrid_api_key} onChange={set("sendgrid_api_key")} placeholder="SendGrid key" />
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Lock className="h-4 w-4" />To'lov integratsiyasi
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <Input label="Click Merchant ID" value={form.click_merchant_id} onChange={set("click_merchant_id")} placeholder="Click merchantId" />
-          <Input label="Payme Merchant ID" value={form.payme_merchant_id} onChange={set("payme_merchant_id")} placeholder="Payme merchantId" />
-          <Input label="Uzum API Key" type="password" value={form.uzum_api_key} onChange={set("uzum_api_key")} placeholder="Uzum API key" />
         </CardContent>
       </Card>
 

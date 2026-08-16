@@ -2,7 +2,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { AuthUser, UserRole } from "@/types";
-import { setAccessTokenCookie, clearAccessTokenCookie } from "@/lib/api";
+import { authApi } from "@/lib/api";
 
 interface ProfileResponse {
   fullName?: string | null;
@@ -12,31 +12,33 @@ interface ProfileResponse {
 
 interface AuthState {
   user: AuthUser | null;
-  accessToken: string | null;
-  refreshToken: string | null;
   isAuthenticated: boolean;
-  setAuth: (user: AuthUser, accessToken: string, refreshToken: string) => void;
+  setAuth: (user: AuthUser) => void;
   setUser: (user: AuthUser) => void;
   hydrateProfile: (profileData: ProfileResponse) => void;
   logout: () => void;
   hasRole: (role: UserRole | UserRole[]) => boolean;
 }
 
+// Older builds stored raw tokens in localStorage; now that they live in httpOnly
+// cookies, strip any leftovers from browsers that logged in before this migration.
+if (typeof window !== "undefined") {
+  localStorage.removeItem("accessToken");
+  localStorage.removeItem("refreshToken");
+}
+
 export const useAuthStore = create<AuthState>()(
   persist(
     (set, get) => ({
       user: null,
-      accessToken: null,
-      refreshToken: null,
       isAuthenticated: false,
 
-      setAuth: (user, accessToken, refreshToken) => {
-        if (typeof window !== "undefined") {
-          localStorage.setItem("accessToken", accessToken);
-          localStorage.setItem("refreshToken", refreshToken);
-        }
-        setAccessTokenCookie(accessToken);
-        set({ user, accessToken, refreshToken, isAuthenticated: true });
+      // accessToken/refreshToken live in httpOnly cookies the backend sets on
+      // /auth/login — they're never readable by JS, so the store only tracks
+      // the user profile for display purposes; the cookie is what the backend
+      // actually checks on every request.
+      setAuth: (user) => {
+        set({ user, isAuthenticated: true });
       },
 
       setUser: (user) => set({ user }),
@@ -62,13 +64,13 @@ export const useAuthStore = create<AuthState>()(
         });
       },
 
+      // httpOnly cookies can't be cleared from JS — ask the backend to drop them
+      // (and invalidate the stored refresh token) before wiping local state.
       logout: () => {
+        set({ user: null, isAuthenticated: false });
         if (typeof window !== "undefined") {
-          localStorage.removeItem("accessToken");
-          localStorage.removeItem("refreshToken");
+          authApi.logout().catch(() => {});
         }
-        clearAccessTokenCookie();
-        set({ user: null, accessToken: null, refreshToken: null, isAuthenticated: false });
       },
 
       hasRole: (role) => {
@@ -82,8 +84,6 @@ export const useAuthStore = create<AuthState>()(
       name: "auth-storage",
       partialize: (state) => ({
         user: state.user,
-        accessToken: state.accessToken,
-        refreshToken: state.refreshToken,
         isAuthenticated: state.isAuthenticated,
       }),
     }

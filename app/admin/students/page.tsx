@@ -161,7 +161,7 @@ export default function StudentsPage() {
                           <Eye className="h-4 w-4" />
                         </Button>
                       </Link>
-                      <Link href={`/admin/students/${row.id}/edit`}>
+                      <Link href={`/admin/students/${row.id}/edit?back=/admin/students`}>
                         <Button variant="ghost" size="icon-sm" title="Tahrirlash">
                           <Pencil className="h-4 w-4" />
                         </Button>

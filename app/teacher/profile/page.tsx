@@ -6,7 +6,7 @@ import { Pencil, X, Check, Eye, EyeOff, LogOut, Camera } from "lucide-react";
 import { useAuthStore } from "@/store/authStore";
 import { UserAvatar } from "@/components/ui/avatar";
 import { teachersApi, groupsApi, authApi, uploadsApi } from "@/lib/api";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, formatPhone, formatPhoneInput } from "@/lib/utils";
 import toast from "react-hot-toast";
 
 interface TeacherDetail {
@@ -137,7 +137,7 @@ export default function TeacherProfilePage() {
                     <div className="flex items-center gap-1">
                       <input
                         value={editVal}
-                        onChange={(e) => setEditVal(e.target.value)}
+                        onChange={(e) => setEditVal(field === "phone" ? formatPhoneInput(e.target.value) : e.target.value)}
                         autoFocus
                         className="flex-1 min-w-0 h-7 px-2 text-sm border border-[#1E3A5F] rounded-lg outline-none bg-[var(--background)]"
                       />
@@ -146,7 +146,7 @@ export default function TeacherProfilePage() {
                     </div>
                   ) : (
                     <div className="flex items-center gap-1 group">
-                      <p className="text-sm font-semibold truncate">{String(info[field]) || "—"}</p>
+                      <p className="text-sm font-semibold truncate">{field === "phone" && info[field] ? formatPhone(String(info[field])) : String(info[field]) || "—"}</p>
                       <button onClick={() => startEdit(field)} className="opacity-0 group-hover:opacity-100 p-0.5 text-[var(--muted-foreground)] hover:text-[#1E3A5F] transition-all">
                         <Pencil className="h-3 w-3" />
                       </button>
@@ -199,7 +199,7 @@ export default function TeacherProfilePage() {
           <p className="text-xs text-[var(--muted-foreground)] mt-0.5">Hisobingizdan chiqish</p>
         </div>
         <button
-          onClick={() => { logout(); router.push("/login"); }}
+          onClick={() => { logout(); router.push("/student/login"); }}
           className="flex items-center gap-2 px-4 py-2 rounded-xl border border-red-200 text-red-500 text-sm font-medium hover:bg-red-50 transition-colors"
         >
           <LogOut className="h-4 w-4" />Chiqish

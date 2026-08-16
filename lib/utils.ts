@@ -19,7 +19,30 @@ export function formatRelativeTime(date: string | Date) {
 }
 
 export function formatCurrency(amount: number, currency = "so'm") {
-  return `${new Intl.NumberFormat("uz-UZ").format(amount)} ${currency}`;
+  return `${new Intl.NumberFormat("en-US").format(amount)} ${currency}`;
+}
+
+// Comma-grouped, no currency suffix — for plain numeric fields (counts, quantities, etc).
+export function formatNumber(value: number) {
+  return new Intl.NumberFormat("en-US").format(value);
+}
+
+// Live-formats a phone number as the user types, inserting the +998 country
+// code and grouping spaces automatically — so nobody has to type them by hand.
+export function formatPhoneInput(value: string): string {
+  const digitsOnly = value.replace(/\D/g, "");
+  if (!digitsOnly) return "";
+
+  let digits = digitsOnly.startsWith("998") ? digitsOnly : `998${digitsOnly}`;
+  digits = digits.slice(0, 12);
+
+  const rest = digits.slice(3);
+  let formatted = "+998";
+  if (rest.length > 0) formatted += ` ${rest.slice(0, 2)}`;
+  if (rest.length > 2) formatted += ` ${rest.slice(2, 5)}`;
+  if (rest.length > 5) formatted += ` ${rest.slice(5, 7)}`;
+  if (rest.length > 7) formatted += ` ${rest.slice(7, 9)}`;
+  return formatted;
 }
 
 export function formatPhone(phone: string) {
@@ -114,6 +137,11 @@ export function getDayShort(day: string): string {
 export function calculatePercentage(value: number, total: number): number {
   if (total === 0) return 0;
   return Math.round((value / total) * 100);
+}
+
+// Admin has its own portal; teacher/student/parent all share the other one.
+export function getLoginRoute(role?: string | null): string {
+  return role === "ADMIN" ? "/admin/login" : "/student/login";
 }
 
 export function truncate(str: string, maxLength: number): string {

@@ -12,7 +12,7 @@ import { StatCard } from "@/components/ui/stat-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { UserAvatar } from "@/components/ui/avatar";
-import { formatCurrency, formatDate, getStatusColor, getStatusLabel } from "@/lib/utils";
+import { formatCurrency, formatDate, formatPhone, getStatusColor, getStatusLabel } from "@/lib/utils";
 import { reportsApi, studentsApi, paymentsApi } from "@/lib/api";
 import type { DashboardStats, RevenueData, AttendanceStats } from "@/types";
 
@@ -211,7 +211,7 @@ export default function AdminDashboardPage() {
                   <UserAvatar name={student.fullName} size="sm" />
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium truncate">{student.fullName}</p>
-                    <p className="text-xs text-[var(--muted-foreground)]">{student.phone}</p>
+                    <p className="text-xs text-[var(--muted-foreground)]">{formatPhone(student.phone)}</p>
                   </div>
                   <div className="text-right shrink-0">
                     <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${getStatusColor(student.status)}`}>

@@ -7,7 +7,6 @@ import { z } from "zod";
 import { Eye, EyeOff } from "lucide-react";
 import { useAuthStore } from "@/store/authStore";
 import { authApi } from "@/lib/api";
-import { Button } from "@/components/ui/button";
 import toast from "react-hot-toast";
 import type { AuthUser, UserRole } from "@/types";
 
@@ -33,7 +32,11 @@ function extractErrorMessage(error: unknown): string {
   return data?.message || "ID yoki parol noto'g'ri";
 }
 
-function LoginForm() {
+interface RoleLoginFormProps {
+  allowedRoles: UserRole[];
+}
+
+function RoleLoginForm({ allowedRoles }: RoleLoginFormProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { setAuth, hydrateProfile, logout } = useAuthStore();
@@ -64,7 +67,17 @@ function LoginForm() {
     setLoading(true);
     try {
       const { data } = await authApi.login(formData.login, formData.password);
-      const { accessToken, refreshToken, user } = data;
+      const { user } = data;
+
+      if (!allowedRoles.includes(user.role)) {
+        // Login/parol to'g'ri, lekin bu hisob shu portalga tegishli emas — backend
+        // hali ham cookie o'rnatib ulgurgan, shuni bekor qilamiz va oddiy "login
+        // yoki parol xato" xabarini ko'rsatamiz, aks holda bu portal orqali boshqa
+        // portallardagi hisoblar mavjudligini bilib olish mumkin bo'lardi.
+        await authApi.logout().catch(() => {});
+        toast.error("ID yoki parol noto'g'ri");
+        return;
+      }
 
       const authUser: AuthUser = {
         id: user.id,
@@ -72,9 +85,10 @@ function LoginForm() {
         loginId: user.loginId,
         role: user.role,
         isActive: true,
+        isSuperAdmin: user.isSuperAdmin,
         avatarUrl: user.avatarUrl,
       };
-      setAuth(authUser, accessToken, refreshToken);
+      setAuth(authUser);
 
       try {
         const { data: profile } = await authApi.getProfile();
@@ -156,7 +170,12 @@ function LoginForm() {
   );
 }
 
-export default function LoginPage() {
+interface RoleLoginPageProps {
+  allowedRoles: UserRole[];
+  subtitle: string;
+}
+
+export function RoleLoginPage({ allowedRoles, subtitle }: RoleLoginPageProps) {
   return (
     <div className="min-h-[100dvh] flex bg-[#f0f2f5]">
       {/* Left panel — illustration */}
@@ -230,10 +249,10 @@ export default function LoginPage() {
           </div>
 
           <h1 className="text-2xl sm:text-3xl font-bold text-gray-800 mb-1">Kirish</h1>
-          <p className="text-sm text-gray-400 mb-8">Tizimga kirish uchun ma'lumotlaringizni kiriting</p>
+          <p className="text-sm text-gray-400 mb-8">{subtitle}</p>
 
           <Suspense fallback={<div className="space-y-4"><div className="h-12 animate-pulse bg-gray-100 rounded-xl"/><div className="h-12 animate-pulse bg-gray-100 rounded-xl"/><div className="h-12 animate-pulse bg-gray-100 rounded-xl"/></div>}>
-            <LoginForm />
+            <RoleLoginForm allowedRoles={allowedRoles} />
           </Suspense>
 
           <p className="text-center text-xs text-gray-300 mt-8">

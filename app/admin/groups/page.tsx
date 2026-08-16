@@ -1,7 +1,7 @@
 "use client";
 import React from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Eye, Pencil, Trash2, Users } from "lucide-react";
+import { Plus, Eye, Pencil, Trash2, Users, UserPlus } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -66,9 +66,14 @@ export default function GroupsPage() {
           <h1 className="text-xl sm:text-2xl font-bold">Guruhlar</h1>
           <p className="text-sm text-[var(--muted-foreground)] mt-1">Jami {total} ta guruh</p>
         </div>
-        <Link href="/admin/groups/new">
-          <Button size="sm"><Plus className="h-4 w-4" />Yangi guruh</Button>
-        </Link>
+        <div className="flex gap-2">
+          <Link href="/admin/students/new?back=/admin/groups">
+            <Button size="sm" variant="outline"><UserPlus className="h-4 w-4" />Yangi o'quvchi</Button>
+          </Link>
+          <Link href="/admin/groups/new">
+            <Button size="sm"><Plus className="h-4 w-4" />Yangi guruh</Button>
+          </Link>
+        </div>
       </div>
 
       <div className="flex flex-wrap gap-3">
@@ -134,7 +139,7 @@ export default function GroupsPage() {
                       <Link href={`/admin/groups/${row.id}`}>
                         <Button variant="ghost" size="icon-sm"><Eye className="h-4 w-4" /></Button>
                       </Link>
-                      <Link href={`/admin/groups/${row.id}/edit`}>
+                      <Link href={`/admin/groups/${row.id}/edit?back=/admin/groups`}>
                         <Button variant="ghost" size="icon-sm"><Pencil className="h-4 w-4" /></Button>
                       </Link>
                       <Button variant="ghost" size="icon-sm"

@@ -1,6 +1,6 @@
 "use client";
-import React from "react";
-import { useRouter } from "next/navigation";
+import React, { Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -11,13 +11,19 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { studentsApi, groupsApi } from "@/lib/api";
+import { studentsApi, groupsApi, subjectsApi } from "@/lib/api";
+import { formatPhoneInput } from "@/lib/utils";
 import toast from "react-hot-toast";
 
 interface GroupOption {
   id: string;
   name: string;
   subjectName: string;
+}
+
+interface SubjectOption {
+  id: string;
+  name: string;
 }
 
 interface CreatedCredentials {
@@ -44,15 +50,23 @@ function extractErrorMessage(error: unknown): string {
   return data?.message || "Xatolik yuz berdi";
 }
 
-export default function NewStudentPage() {
+function NewStudentForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const backHref = searchParams.get("back") || "/admin/students";
   const queryClient = useQueryClient();
   const [showPassword, setShowPassword] = React.useState(false);
   const [created, setCreated] = React.useState<CreatedCredentials | null>(null);
+  const [subjectId, setSubjectId] = React.useState("");
+
+  const { data: subjects = [] } = useQuery({
+    queryKey: ["subjects-options"],
+    queryFn: () => subjectsApi.getAll().then((r) => r.data as SubjectOption[]),
+  });
 
   const { data: groupsRes } = useQuery({
-    queryKey: ["groups-options"],
-    queryFn: () => groupsApi.getAll({ limit: 100 }).then((r) => r.data as { data: GroupOption[] }),
+    queryKey: ["groups-options", subjectId],
+    queryFn: () => groupsApi.getAll({ limit: 100, subjectId: subjectId || undefined }).then((r) => r.data as { data: GroupOption[] }),
   });
   const groups = groupsRes?.data ?? [];
 
@@ -93,7 +107,7 @@ export default function NewStudentPage() {
     return (
       <div className="space-y-6 max-w-lg">
         <div className="flex items-center gap-3">
-          <Link href="/admin/students">
+          <Link href={backHref}>
             <Button variant="ghost" size="icon">
               <ArrowLeft className="h-4 w-4" />
             </Button>
@@ -147,7 +161,7 @@ export default function NewStudentPage() {
   return (
     <div className="space-y-6 max-w-3xl">
       <div className="flex items-center gap-3">
-        <Link href="/admin/students">
+        <Link href={backHref}>
           <Button variant="ghost" size="icon">
             <ArrowLeft className="h-4 w-4" />
           </Button>
@@ -183,7 +197,7 @@ export default function NewStudentPage() {
               label="Telefon raqam *"
               placeholder="+998 90 123 45 67"
               error={errors.phone?.message}
-              {...register("phone")}
+              {...register("phone", { onChange: (e) => { e.target.value = formatPhoneInput(e.target.value); } })}
             />
             <Input
               label="Ota-ona telefoni"
@@ -223,6 +237,21 @@ export default function NewStudentPage() {
           </CardHeader>
           <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
+              <label className="block text-sm font-medium text-[var(--foreground)] mb-1.5">Fan</label>
+              <Select value={subjectId} onValueChange={(v) => { setSubjectId(v); setValue("groupId", ""); }}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Fan tanlang" />
+                </SelectTrigger>
+                <SelectContent>
+                  {subjects.map((s) => (
+                    <SelectItem key={s.id} value={s.id}>
+                      {s.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
               <label className="block text-sm font-medium text-[var(--foreground)] mb-1.5">Guruh</label>
               <Select value={watch("groupId") ?? ""} onValueChange={(v) => setValue("groupId", v)}>
                 <SelectTrigger>
@@ -237,16 +266,18 @@ export default function NewStudentPage() {
                 </SelectContent>
               </Select>
             </div>
-            <Input
-              label="Qayerdan keldi"
-              placeholder="Instagram, do'st, e'lon..."
-              {...register("referralSource")}
-            />
+            <div className="sm:col-span-2">
+              <Input
+                label="Qayerdan keldi"
+                placeholder="Instagram, do'st, e'lon..."
+                {...register("referralSource")}
+              />
+            </div>
           </CardContent>
         </Card>
 
         <div className="flex gap-3 justify-end">
-          <Link href="/admin/students">
+          <Link href={backHref}>
             <Button variant="outline">Bekor qilish</Button>
           </Link>
           <Button type="submit" disabled={mutation.isPending}>
@@ -256,5 +287,13 @@ export default function NewStudentPage() {
         </div>
       </form>
     </div>
+  );
+}
+
+export default function NewStudentPage() {
+  return (
+    <Suspense fallback={null}>
+      <NewStudentForm />
+    </Suspense>
   );
 }

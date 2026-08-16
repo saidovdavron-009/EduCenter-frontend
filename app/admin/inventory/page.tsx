@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/modal";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { formatDateTime } from "@/lib/utils";
+import { formatDateTime, formatCurrency } from "@/lib/utils";
 import { inventoryApi, branchesApi, studentsApi } from "@/lib/api";
 import toast from "react-hot-toast";
 
@@ -259,7 +259,7 @@ export default function InventoryPage() {
                   <p className="font-semibold text-sm">{sale.studentName}</p>
                   <p className="text-xs text-[var(--muted-foreground)]">{sale.itemName} • {formatDateTime(sale.date)}</p>
                 </div>
-                <span className="font-bold text-sm shrink-0 text-green-600">{sale.amount.toLocaleString()} so'm</span>
+                <span className="font-bold text-sm shrink-0 text-green-600">{formatCurrency(sale.amount)}</span>
               </div>
             ))
           )}

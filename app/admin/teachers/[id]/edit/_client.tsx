@@ -1,6 +1,6 @@
 "use client";
-import React, { use } from "react";
-import { useRouter } from "next/navigation";
+import React, { use, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { teachersApi } from "@/lib/api";
+import { formatPhoneInput } from "@/lib/utils";
 import toast from "react-hot-toast";
 
 interface TeacherDetail {
@@ -21,6 +22,7 @@ interface TeacherDetail {
   phone: string;
   subjects: string[];
   experience: number | null;
+  maxGroups: number | null;
   salaryType: "MONTHLY" | "HOURLY";
   salary: number;
   isActive: boolean;
@@ -33,6 +35,7 @@ const teacherEditSchema = z.object({
   email: z.string().optional(),
   subjects: z.string().min(1, "Fan kiriting"),
   experience: z.string().optional(),
+  maxGroups: z.string().optional(),
   salaryType: z.enum(["HOURLY", "MONTHLY"]),
   salary: z.number().min(0, "Ish haqi kiriting"),
   bio: z.string().optional(),
@@ -47,9 +50,10 @@ function extractErrorMessage(error: unknown): string {
   return data?.message || "Xatolik yuz berdi";
 }
 
-export default function EditTeacherPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = use(params);
+function EditTeacherForm({ id }: { id: string }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const backHref = searchParams.get("back") || `/admin/teachers/${id}`;
   const queryClient = useQueryClient();
 
   const { data: teacher, isLoading } = useQuery({
@@ -70,6 +74,7 @@ export default function EditTeacherPage({ params }: { params: Promise<{ id: stri
         email: teacher.email || "",
         subjects: (teacher.subjects || []).join(", "),
         experience: teacher.experience != null ? String(teacher.experience) : "",
+        maxGroups: teacher.maxGroups != null ? String(teacher.maxGroups) : "",
         salaryType: teacher.salaryType,
         salary: teacher.salary,
         bio: teacher.bio || "",
@@ -86,6 +91,7 @@ export default function EditTeacherPage({ params }: { params: Promise<{ id: stri
         email: data.email || undefined,
         subjects: data.subjects.split(",").map((s) => s.trim()).filter(Boolean),
         experience: data.experience ? Number(data.experience) : undefined,
+        maxGroups: data.maxGroups ? Number(data.maxGroups) : undefined,
         salaryType: data.salaryType,
         salary: data.salary,
         bio: data.bio || undefined,
@@ -107,7 +113,7 @@ export default function EditTeacherPage({ params }: { params: Promise<{ id: stri
   return (
     <div className="space-y-6 max-w-3xl">
       <div className="flex items-center gap-3">
-        <Link href={`/admin/teachers/${id}`}>
+        <Link href={backHref}>
           <Button variant="ghost" size="icon"><ArrowLeft className="h-4 w-4" /></Button>
         </Link>
         <div>
@@ -123,12 +129,13 @@ export default function EditTeacherPage({ params }: { params: Promise<{ id: stri
             <div className="sm:col-span-2">
               <Input label="To'liq ismi *" error={errors.fullName?.message} {...register("fullName")} />
             </div>
-            <Input label="Telefon *" error={errors.phone?.message} {...register("phone")} />
+            <Input label="Telefon *" error={errors.phone?.message} {...register("phone", { onChange: (e) => { e.target.value = formatPhoneInput(e.target.value); } })} />
             <Input label="Email" {...register("email")} />
             <div className="sm:col-span-2">
               <Input label="Fanlar * (vergul bilan ajrating)" error={errors.subjects?.message} {...register("subjects")} />
             </div>
             <Input label="Tajriba (yil)" type="number" error={errors.experience?.message} {...register("experience")} />
+            <Input label="Nechta guruhga biriktirish mumkin" type="number" placeholder="Cheklovsiz" error={errors.maxGroups?.message} {...register("maxGroups")} />
             <div>
               <label className="block text-sm font-medium text-[var(--foreground)] mb-1.5">Holat</label>
               <Select value={watch("isActive")} onValueChange={(v) => setValue("isActive", v as "true" | "false")}>
@@ -168,7 +175,7 @@ export default function EditTeacherPage({ params }: { params: Promise<{ id: stri
         </Card>
 
         <div className="flex gap-3 justify-end">
-          <Link href={`/admin/teachers/${id}`}>
+          <Link href={backHref}>
             <Button variant="outline">Bekor qilish</Button>
           </Link>
           <Button type="submit" disabled={mutation.isPending}>
@@ -177,5 +184,14 @@ export default function EditTeacherPage({ params }: { params: Promise<{ id: stri
         </div>
       </form>
     </div>
+  );
+}
+
+export default function EditTeacherPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = use(params);
+  return (
+    <Suspense fallback={null}>
+      <EditTeacherForm id={id} />
+    </Suspense>
   );
 }

@@ -1,4 +1,5 @@
 import axios, { AxiosResponse } from "axios";
+import { useAuthStore } from "@/store/authStore";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001/api/v1";
 
@@ -10,19 +11,6 @@ export const api = axios.create({
   withCredentials: true,
 });
 
-api.interceptors.request.use(
-  (config) => {
-    if (typeof window !== "undefined") {
-      const token = localStorage.getItem("accessToken");
-      if (token) {
-        config.headers.Authorization = `Bearer ${token}`;
-      }
-    }
-    return config;
-  },
-  (error) => Promise.reject(error)
-);
-
 // Backend wraps every success response as { success, data, timestamp } (see ResponseInterceptor).
 // Unwrap it here so callers work with the actual payload directly.
 function unwrapEnvelope(response: AxiosResponse): AxiosResponse {
@@ -33,40 +21,25 @@ function unwrapEnvelope(response: AxiosResponse): AxiosResponse {
   return response;
 }
 
-export function setAccessTokenCookie(token: string) {
-  if (typeof document !== "undefined") {
-    document.cookie = `accessToken=${token}; path=/`;
-  }
-}
-
-export function clearAccessTokenCookie() {
-  if (typeof document !== "undefined") {
-    document.cookie = "accessToken=; path=/; max-age=0";
-  }
-}
-
+// accessToken/refreshToken now live in httpOnly cookies set by the backend — the
+// browser attaches them automatically (withCredentials: true) and JS never sees
+// their values, so there's nothing to read/write from localStorage anymore.
+//
 // Refresh tokens rotate server-side on every use (single-use). Dashboard pages fire
 // several requests in parallel, so multiple 401s can land at once — without this,
 // each one would race to redeem the same refreshToken and all but the first would
 // fail, logging the user out even though the first refresh actually succeeded.
 // Sharing one in-flight refresh call across all of them avoids that race.
-let refreshPromise: Promise<string> | null = null;
+let refreshPromise: Promise<void> | null = null;
 
-function refreshAccessToken(): Promise<string> {
+function refreshAccessToken(): Promise<void> {
   if (!refreshPromise) {
-    refreshPromise = (async () => {
-      const refreshToken = localStorage.getItem("refreshToken");
-      if (!refreshToken) throw new Error("No refresh token");
-
-      const { data: envelope } = await axios.post(`${API_BASE_URL}/auth/refresh`, { refreshToken });
-      const { accessToken, refreshToken: newRefreshToken } = envelope.data;
-      localStorage.setItem("accessToken", accessToken);
-      localStorage.setItem("refreshToken", newRefreshToken);
-      setAccessTokenCookie(accessToken);
-      return accessToken;
-    })().finally(() => {
-      refreshPromise = null;
-    });
+    refreshPromise = axios
+      .post(`${API_BASE_URL}/auth/refresh`, {}, { withCredentials: true })
+      .then(() => undefined)
+      .finally(() => {
+        refreshPromise = null;
+      });
   }
   return refreshPromise;
 }
@@ -101,9 +74,14 @@ function recordAuthFailure(originalError: unknown, refreshError: unknown) {
 // "wrong credentials" or "bad/expired OTP", not "your session expired". They must
 // bubble up as a normal rejected promise so the calling form can show its own error,
 // instead of being treated as a session-expiry that force-redirects to /login.
+// /auth/logout is included too: the login page calls it on mount to clear any stale
+// session, and with no cookies present that 401s — treating it as a session-expiry
+// would redirect to /login, which re-mounts the login page and calls logout() again,
+// looping forever.
 const AUTH_ENDPOINTS_EXCLUDED_FROM_REFRESH = [
   "/auth/login",
   "/auth/refresh",
+  "/auth/logout",
   "/auth/forgot-password",
   "/auth/reset-password",
 ];
@@ -118,16 +96,18 @@ api.interceptors.response.use(
       originalRequest._retry = true;
 
       try {
-        const accessToken = await refreshAccessToken();
-        originalRequest.headers.Authorization = `Bearer ${accessToken}`;
+        await refreshAccessToken();
         return api(originalRequest);
       } catch (refreshError) {
         recordAuthFailure(error, refreshError);
-        localStorage.removeItem("accessToken");
-        localStorage.removeItem("refreshToken");
-        clearAccessTokenCookie();
         if (typeof window !== "undefined") {
-          window.location.href = "/login";
+          // Admin has its own portal; teacher/student/parent share the other one —
+          // read the role before it's gone so the redirect lands on the right login.
+          const role = useAuthStore.getState().user?.role;
+          const loginPath = role === "ADMIN" ? "/admin/login" : "/student/login";
+          if (window.location.pathname !== loginPath) {
+            window.location.href = loginPath;
+          }
         }
       }
     }
@@ -141,8 +121,7 @@ export const authApi = {
   login: (login: string, password: string) =>
     api.post("/auth/login", { login, password }),
   logout: () => api.post("/auth/logout"),
-  refresh: (refreshToken: string) =>
-    api.post("/auth/refresh", { refreshToken }),
+  refresh: () => api.post("/auth/refresh"),
   getProfile: () => api.get("/auth/profile"),
   changePassword: (data: { currentPassword: string; newPassword: string }) => api.patch("/auth/change-password", data),
   updateAvatar: (avatarUrl: string) => api.patch("/auth/avatar", { avatarUrl }),
@@ -167,6 +146,14 @@ export const uploadsApi = {
       headers: { "Content-Type": "multipart/form-data" },
     });
   },
+};
+
+// Admins (superadmin-only)
+export const adminsApi = {
+  getAll: () => api.get("/admins"),
+  create: (data: unknown) => api.post("/admins", data),
+  update: (id: string, data: unknown) => api.patch(`/admins/${id}`, data),
+  delete: (id: string) => api.delete(`/admins/${id}`),
 };
 
 // Students
@@ -349,14 +336,15 @@ export const teacherAttendanceApi = {
   delete: (id: string) => api.delete(`/teacher-attendance/${id}`),
 };
 
-// Teacher Salaries
-export const teacherSalariesApi = {
-  getAll: (params?: Record<string, unknown>) => api.get("/teacher-salaries", { params }),
-  getById: (id: string) => api.get(`/teacher-salaries/${id}`),
-  create: (data: unknown) => api.post("/teacher-salaries", data),
-  update: (id: string, data: unknown) => api.patch(`/teacher-salaries/${id}`, data),
-  pay: (id: string, data?: unknown) => api.patch(`/teacher-salaries/${id}/pay`, data),
-  delete: (id: string) => api.delete(`/teacher-salaries/${id}`),
+// Staff Salaries
+export const staffSalariesApi = {
+  getEmployees: () => api.get("/staff-salaries/employees"),
+  getAll: (params?: Record<string, unknown>) => api.get("/staff-salaries", { params }),
+  getById: (id: string) => api.get(`/staff-salaries/${id}`),
+  create: (data: unknown) => api.post("/staff-salaries", data),
+  update: (id: string, data: unknown) => api.patch(`/staff-salaries/${id}`, data),
+  pay: (id: string, data?: unknown) => api.patch(`/staff-salaries/${id}/pay`, data),
+  delete: (id: string) => api.delete(`/staff-salaries/${id}`),
 };
 
 // Settings

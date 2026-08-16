@@ -8,6 +8,7 @@ import { Modal, ModalHeader, ModalTitle, ModalFooter } from "@/components/ui/mod
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { subjectsApi } from "@/lib/api";
+import { formatCurrency, formatNumber } from "@/lib/utils";
 import toast from "react-hot-toast";
 
 interface Subject {
@@ -15,6 +16,8 @@ interface Subject {
   name: string;
   description: string | null;
   level: string | null;
+  monthlyFee: number;
+  days: string[] | null;
   isActive: boolean;
 }
 
@@ -24,7 +27,13 @@ function extractErrorMessage(error: unknown): string {
   return data?.message || "Xatolik yuz berdi";
 }
 
-const empty = { name: "", level: "", description: "" };
+const DAYS = ["MON", "TUE", "WED", "THU", "FRI", "SAT"];
+const DAY_LABELS: Record<string, string> = {
+  MON: "Dushanba", TUE: "Seshanba", WED: "Chorshanba",
+  THU: "Payshanba", FRI: "Juma", SAT: "Shanba",
+};
+
+const empty = { name: "", level: "", description: "", monthlyFee: "", days: [] as string[] };
 
 export default function SubjectsPage() {
   const queryClient = useQueryClient();
@@ -42,14 +51,14 @@ export default function SubjectsPage() {
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ["subjects"] });
 
   const createMutation = useMutation({
-    mutationFn: (data: typeof empty) => subjectsApi.create({ name: data.name, level: data.level || undefined, description: data.description || undefined }),
+    mutationFn: (data: typeof empty) => subjectsApi.create({ name: data.name, level: data.level || undefined, description: data.description || undefined, monthlyFee: Number(data.monthlyFee) || 0, days: data.days.length ? data.days : undefined }),
     onSuccess: () => { toast.success("Fan qo'shildi"); invalidate(); setOpen(false); },
     onError: (e) => toast.error(extractErrorMessage(e)),
   });
 
   const updateMutation = useMutation({
     mutationFn: ({ id, data }: { id: string; data: typeof empty }) =>
-      subjectsApi.update(id, { name: data.name, level: data.level || undefined, description: data.description || undefined }),
+      subjectsApi.update(id, { name: data.name, level: data.level || undefined, description: data.description || undefined, monthlyFee: Number(data.monthlyFee) || 0, days: data.days }),
     onSuccess: () => { toast.success("Yangilandi"); invalidate(); setOpen(false); },
     onError: (e) => toast.error(extractErrorMessage(e)),
   });
@@ -61,10 +70,14 @@ export default function SubjectsPage() {
   });
 
   const openAdd = () => { setEditId(null); setForm(empty); setOpen(true); };
-  const openEdit = (s: Subject) => { setEditId(s.id); setForm({ name: s.name, level: s.level || "", description: s.description || "" }); setOpen(true); };
+  const openEdit = (s: Subject) => { setEditId(s.id); setForm({ name: s.name, level: s.level || "", description: s.description || "", monthlyFee: String(s.monthlyFee), days: s.days || [] }); setOpen(true); };
+  const toggleDay = (day: string) => {
+    setForm((f) => ({ ...f, days: f.days.includes(day) ? f.days.filter((d) => d !== day) : [...f.days, day] }));
+  };
 
   const handleSave = () => {
     if (!form.name || form.name.length < 2) { toast.error("Fan nomi kamida 2 ta belgi bo'lishi kerak"); return; }
+    if (!form.monthlyFee) { toast.error("Oylik to'lovni kiriting"); return; }
     if (editId) updateMutation.mutate({ id: editId, data: form });
     else createMutation.mutate(form);
   };
@@ -110,6 +123,16 @@ export default function SubjectsPage() {
                   </div>
                 </div>
                 {s.description && <p className="text-xs text-[var(--muted-foreground)]">{s.description}</p>}
+                <p className="text-xs font-medium text-[#1E3A5F]">{formatCurrency(s.monthlyFee)}/oy</p>
+                {s.days && s.days.length > 0 && (
+                  <div className="flex flex-wrap gap-1">
+                    {s.days.map((d) => (
+                      <span key={d} className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-[var(--muted)] text-[var(--muted-foreground)]">
+                        {DAY_LABELS[d]?.slice(0, 2) ?? d}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </CardContent>
             </Card>
           ))}
@@ -121,7 +144,26 @@ export default function SubjectsPage() {
         <div className="p-6 space-y-3">
           <Input label="Fan nomi *" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Ingliz tili" />
           <Input label="Daraja" value={form.level} onChange={e => setForm(f => ({ ...f, level: e.target.value }))} placeholder="A1-C2" />
+          <Input
+            label="Oylik to'lov (so'm) *"
+            inputMode="numeric"
+            value={form.monthlyFee ? formatNumber(Number(form.monthlyFee)) : ""}
+            onChange={e => setForm(f => ({ ...f, monthlyFee: e.target.value.replace(/\D/g, "") }))}
+            placeholder="500 000"
+          />
           <Input label="Tavsif" value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Fan haqida qisqacha..." />
+          <div>
+            <label className="text-sm font-medium mb-2 block">Dars kunlari</label>
+            <div className="flex flex-wrap gap-2">
+              {DAYS.map(day => (
+                <button key={day} type="button"
+                  onClick={() => toggleDay(day)}
+                  className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors ${form.days.includes(day) ? "bg-[#1E3A5F] text-white border-[#1E3A5F]" : "border-[var(--border)] hover:border-[#1E3A5F]"}`}>
+                  {DAY_LABELS[day].slice(0, 2)}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
         <ModalFooter>
           <Button variant="outline" onClick={() => setOpen(false)}>Bekor</Button>

@@ -1,6 +1,6 @@
 "use client";
-import React, { use } from "react";
-import { useRouter } from "next/navigation";
+import React, { use, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, Save } from "lucide-react";
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -9,13 +9,15 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { subjectsApi, teachersApi, groupsApi } from "@/lib/api";
+import { subjectsApi, teachersApi, branchesApi, groupsApi } from "@/lib/api";
+import { formatCurrency } from "@/lib/utils";
 import toast from "react-hot-toast";
 
-interface SubjectOption { id: string; name: string; }
+interface SubjectOption { id: string; name: string; monthlyFee: number; }
 interface TeacherOption { id: string; fullName: string; }
+interface BranchOption { id: string; name: string; }
 interface GroupDetail {
-  id: string; name: string; subjectId: string; teacherId: string;
+  id: string; name: string; subjectId: string; teacherId: string; branchId: string | null;
   capacity: number; monthlyFee: number; status: "ACTIVE" | "FULL" | "CLOSED"; description?: string | null;
 }
 
@@ -25,9 +27,10 @@ function extractErrorMessage(error: unknown): string {
   return data?.message || "Xatolik yuz berdi";
 }
 
-export default function EditGroupPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = use(params);
+function EditGroupForm({ id }: { id: string }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const backHref = searchParams.get("back") || `/admin/groups/${id}`;
   const queryClient = useQueryClient();
 
   const { data: group, isLoading } = useQuery({
@@ -47,11 +50,22 @@ export default function EditGroupPage({ params }: { params: Promise<{ id: string
   });
   const teachers = teachersRes?.data ?? [];
 
+  const { data: branchesRes } = useQuery({
+    queryKey: ["branches-options"],
+    queryFn: () => branchesApi.getAll({ limit: 100 }).then((r) => r.data as { data: BranchOption[] }),
+  });
+  const branches = branchesRes?.data ?? [];
+
   const [form, setForm] = React.useState({
-    name: "", subjectId: "", teacherId: "", capacity: "", monthlyFee: "",
+    name: "", subjectId: "", teacherId: "", branchId: "", capacity: "", monthlyFee: "",
     status: "ACTIVE" as "ACTIVE" | "FULL" | "CLOSED", description: "",
   });
   const [nameError, setNameError] = React.useState("");
+
+  const onSubjectChange = (v: string) => {
+    const subject = subjects.find((s) => s.id === v);
+    setForm((f) => ({ ...f, subjectId: v, monthlyFee: subject ? String(subject.monthlyFee) : f.monthlyFee }));
+  };
 
   React.useEffect(() => {
     if (group) {
@@ -59,6 +73,7 @@ export default function EditGroupPage({ params }: { params: Promise<{ id: string
         name: group.name,
         subjectId: group.subjectId,
         teacherId: group.teacherId,
+        branchId: group.branchId ?? "",
         capacity: String(group.capacity),
         monthlyFee: String(group.monthlyFee),
         status: group.status,
@@ -73,6 +88,7 @@ export default function EditGroupPage({ params }: { params: Promise<{ id: string
         name: form.name,
         subjectId: form.subjectId,
         teacherId: form.teacherId,
+        branchId: form.branchId || undefined,
         capacity: Number(form.capacity),
         monthlyFee: Number(form.monthlyFee),
         status: form.status,
@@ -103,7 +119,7 @@ export default function EditGroupPage({ params }: { params: Promise<{ id: string
   return (
     <div className="space-y-6 max-w-2xl">
       <div className="flex items-center gap-3">
-        <Link href={`/admin/groups/${id}`}>
+        <Link href={backHref}>
           <Button variant="ghost" size="icon"><ArrowLeft className="h-4 w-4" /></Button>
         </Link>
         <div>
@@ -120,7 +136,7 @@ export default function EditGroupPage({ params }: { params: Promise<{ id: string
 
             <div>
               <label className="text-sm font-medium mb-1.5 block">Fan *</label>
-              <Select value={form.subjectId} onValueChange={(v) => setForm((f) => ({ ...f, subjectId: v }))}>
+              <Select value={form.subjectId} onValueChange={onSubjectChange}>
                 <SelectTrigger><SelectValue placeholder="Fanni tanlang" /></SelectTrigger>
                 <SelectContent>
                   {subjects.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
@@ -139,6 +155,16 @@ export default function EditGroupPage({ params }: { params: Promise<{ id: string
             </div>
 
             <div>
+              <label className="text-sm font-medium mb-1.5 block">Filial</label>
+              <Select value={form.branchId} onValueChange={(v) => setForm((f) => ({ ...f, branchId: v }))}>
+                <SelectTrigger><SelectValue placeholder="Filialni tanlang" /></SelectTrigger>
+                <SelectContent>
+                  {branches.map(b => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
               <label className="text-sm font-medium mb-1.5 block">Holat</label>
               <Select value={form.status} onValueChange={(v) => setForm((f) => ({ ...f, status: v as "ACTIVE" | "FULL" | "CLOSED" }))}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
@@ -152,7 +178,12 @@ export default function EditGroupPage({ params }: { params: Promise<{ id: string
 
             <div className="grid grid-cols-2 gap-4">
               <Input label="Sig'imi (o'quvchi) *" type="number" value={form.capacity} onChange={(e) => setForm((f) => ({ ...f, capacity: e.target.value }))} />
-              <Input label="Oylik to'lov (so'm) *" type="number" value={form.monthlyFee} onChange={(e) => setForm((f) => ({ ...f, monthlyFee: e.target.value }))} />
+              <div>
+                <label className="text-sm font-medium mb-1.5 block">Oylik to'lov</label>
+                <div className="flex h-9 w-full items-center rounded-lg border border-[var(--border)] bg-[var(--muted)] px-3 text-sm text-[var(--foreground)]">
+                  {form.monthlyFee ? formatCurrency(Number(form.monthlyFee)) : "Avval fanni tanlang"}
+                </div>
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -165,7 +196,7 @@ export default function EditGroupPage({ params }: { params: Promise<{ id: string
         </Card>
 
         <div className="flex gap-3 justify-end">
-          <Link href={`/admin/groups/${id}`}>
+          <Link href={backHref}>
             <Button type="button" variant="outline">Bekor qilish</Button>
           </Link>
           <Button type="button" onClick={handleSave} loading={mutation.isPending}>
@@ -174,5 +205,14 @@ export default function EditGroupPage({ params }: { params: Promise<{ id: string
         </div>
       </div>
     </div>
+  );
+}
+
+export default function EditGroupPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = use(params);
+  return (
+    <Suspense fallback={null}>
+      <EditGroupForm id={id} />
+    </Suspense>
   );
 }

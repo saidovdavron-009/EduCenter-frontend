@@ -8,6 +8,7 @@ import { ArrowLeft, Save, Copy, Eye, EyeOff, CheckCircle2 } from "lucide-react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { teachersApi } from "@/lib/api";
+import { formatPhoneInput } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -19,6 +20,7 @@ const teacherSchema = z.object({
   phone: z.string().min(9, "Telefon raqam kiriting"),
   subjects: z.string().min(1, "Fan kiriting"),
   experience: z.string().optional(),
+  maxGroups: z.string().optional(),
   salaryType: z.enum(["HOURLY", "MONTHLY"]),
   salary: z.number().min(0, "Ish haqi kiriting"),
   bio: z.string().optional(),
@@ -44,6 +46,7 @@ export default function NewTeacherPage() {
         ...data,
         subjects: data.subjects.split(",").map((s) => s.trim()),
         experience: data.experience ? Number(data.experience) : undefined,
+        maxGroups: data.maxGroups ? Number(data.maxGroups) : undefined,
       }).then((r) => r.data as { loginId: string; tempPassword: string }),
     onSuccess: (data) => {
       toast.success("O'qituvchi muvaffaqiyatli qo'shildi");
@@ -135,7 +138,7 @@ export default function NewTeacherPage() {
             <div className="sm:col-span-2">
               <Input label="To'liq ismi *" placeholder="Ism Familya" error={errors.fullName?.message} {...register("fullName")} />
             </div>
-            <Input label="Telefon *" placeholder="+998 90 123 45 67" error={errors.phone?.message} {...register("phone")} />
+            <Input label="Telefon *" placeholder="+998 90 123 45 67" error={errors.phone?.message} {...register("phone", { onChange: (e) => { e.target.value = formatPhoneInput(e.target.value); } })} />
             <div className="sm:col-span-2">
               <Input
                 label="Fanlar * (vergul bilan ajrating)"
@@ -150,6 +153,13 @@ export default function NewTeacherPage() {
               placeholder="5"
               error={errors.experience?.message}
               {...register("experience")}
+            />
+            <Input
+              label="Nechta guruhga biriktirish mumkin"
+              type="number"
+              placeholder="Cheklovsiz"
+              error={errors.maxGroups?.message}
+              {...register("maxGroups")}
             />
           </CardContent>
         </Card>

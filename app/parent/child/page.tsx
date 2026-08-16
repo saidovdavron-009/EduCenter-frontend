@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { UserAvatar } from "@/components/ui/avatar";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { formatDate, getStatusLabel } from "@/lib/utils";
+import { formatDate, formatPhone, getStatusLabel } from "@/lib/utils";
 import { useAuthStore } from "@/store/authStore";
 import { parentsApi, studentsApi, gradesApi, attendanceApi } from "@/lib/api";
 
@@ -116,7 +116,7 @@ export default function ParentChildPage() {
                   <div className="flex flex-wrap gap-4 mt-2 text-sm text-[var(--muted-foreground)]">
                     {student?.gender && <span className="flex items-center gap-1"><User className="h-3.5 w-3.5" />{student.gender === "MALE" ? "Erkak" : "Ayol"}</span>}
                     {student?.dob && <span className="flex items-center gap-1"><Calendar className="h-3.5 w-3.5" />{formatDate(student.dob)}</span>}
-                    {student?.phone && <span className="flex items-center gap-1"><Phone className="h-3.5 w-3.5" />{student.phone}</span>}
+                    {student?.phone && <span className="flex items-center gap-1"><Phone className="h-3.5 w-3.5" />{formatPhone(student.phone)}</span>}
                   </div>
                 </div>
               </div>

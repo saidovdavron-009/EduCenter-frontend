@@ -1,13 +1,20 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-const PUBLIC_ROUTES = ["/login"];
+// Two portals: admin logs in at /admin/login, everyone else (teacher/student/parent)
+// at /student/login. Each dedicated login page itself rejects roles it doesn't own,
+// but must still be publicly reachable (no token) for anyone to land on it.
+const PUBLIC_ROUTES = ["/admin/login", "/student/login"];
 const ROLE_ROUTES: Record<string, string[]> = {
   "/admin": ["ADMIN"],
   "/teacher": ["ADMIN", "TEACHER"],
   "/student": ["ADMIN", "STUDENT"],
   "/parent": ["ADMIN", "PARENT"],
 };
+
+function getLoginRouteForPath(pathname: string): string {
+  return pathname.startsWith("/admin") ? "/admin/login" : "/student/login";
+}
 
 function parseJwt(token: string) {
   try {
@@ -23,8 +30,9 @@ function parseJwt(token: string) {
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  if (pathname === "/register") {
-    return NextResponse.redirect(new URL("/login", request.url));
+  // Legacy single login link — send it to the admin portal by default.
+  if (pathname === "/login" || pathname === "/register") {
+    return NextResponse.redirect(new URL("/admin/login", request.url));
   }
 
   if (PUBLIC_ROUTES.some((route) => pathname.startsWith(route))) {
@@ -32,7 +40,7 @@ export function middleware(request: NextRequest) {
   }
 
   if (pathname === "/") {
-    return NextResponse.redirect(new URL("/login", request.url));
+    return NextResponse.redirect(new URL("/admin/login", request.url));
   }
 
   const token =
@@ -40,14 +48,14 @@ export function middleware(request: NextRequest) {
     request.headers.get("authorization")?.replace("Bearer ", "");
 
   if (!token) {
-    const loginUrl = new URL("/login", request.url);
+    const loginUrl = new URL(getLoginRouteForPath(pathname), request.url);
     loginUrl.searchParams.set("callbackUrl", pathname);
     return NextResponse.redirect(loginUrl);
   }
 
   const payload = parseJwt(token);
   if (!payload || (payload.exp && payload.exp * 1000 < Date.now())) {
-    const loginUrl = new URL("/login", request.url);
+    const loginUrl = new URL(getLoginRouteForPath(pathname), request.url);
     loginUrl.searchParams.set("callbackUrl", pathname);
     return NextResponse.redirect(loginUrl);
   }
@@ -77,7 +85,7 @@ function getRoleHome(role: string): string {
     case "PARENT":
       return "/parent/dashboard";
     default:
-      return "/login";
+      return "/admin/login";
   }
 }
 

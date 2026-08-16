@@ -10,7 +10,7 @@ import { settingsApi } from "@/lib/api";
 import {
   LayoutDashboard, Users, GraduationCap, BookOpen, Calendar, ClipboardCheck,
   CreditCard, BarChart2, FileText, BookMarked, Settings, ChevronLeft,
-  Building2, DollarSign, ChevronRight, Tag, Package, ClipboardList,
+  Building2, DollarSign, Tag, Package, ClipboardList, ShieldCheck,
   FileSignature, ListTodo, CalendarOff, UserCheck, Phone, DoorOpen, Layers, Contact,
 } from "lucide-react";
 import { UserAvatar } from "@/components/ui/avatar";
@@ -62,7 +62,7 @@ const adminNav: NavGroup[] = [
     items: [
       { label: "To'lovlar", href: "/admin/finance", icon: <CreditCard className="h-4 w-4" /> },
       { label: "Xarajatlar", href: "/admin/expenses", icon: <DollarSign className="h-4 w-4" /> },
-      { label: "O'qituvchi maoshlari", href: "/admin/salaries", icon: <DollarSign className="h-4 w-4" /> },
+      { label: "Xodimlar maoshlari", href: "/admin/salaries", icon: <DollarSign className="h-4 w-4" /> },
       { label: "Chegirmalar", href: "/admin/discounts", icon: <Tag className="h-4 w-4" /> },
     ],
   },
@@ -139,7 +139,17 @@ export function Sidebar() {
   const navGroups = React.useMemo(() => {
     if (!user) return [];
     switch (user.role) {
-      case "ADMIN": return adminNav;
+      case "ADMIN": {
+        if (!user.isSuperAdmin) return adminNav;
+        // Only the single super admin manages other admin accounts — inserted
+        // right before "O'quvchilar" in the "Boshqaruv" group.
+        const adminsItem: NavItem = { label: "Adminlar", href: "/admin/admins", icon: <ShieldCheck className="h-4 w-4" /> };
+        return adminNav.map((group) =>
+          group.title === "Boshqaruv"
+            ? { ...group, items: [adminsItem, ...group.items] }
+            : group
+        );
+      }
       case "TEACHER": return teacherNav;
       case "STUDENT": return studentNav;
       case "PARENT": return parentNav;
@@ -172,7 +182,7 @@ export function Sidebar() {
 
       <aside
         className={cn(
-          "fixed top-0 left-0 z-30 h-full bg-[#1E3A5F] text-white flex flex-col transition-all duration-300 ease-in-out",
+          "fixed top-0 left-0 z-30 h-full bg-[#1E3A5F] text-white flex flex-col transition-transform duration-300 ease-in-out",
           // Mobile: full-width drawer slides in/out
           sidebarOpen ? "translate-x-0 w-72 shadow-2xl" : "-translate-x-full w-72",
           // Desktop: always visible, collapsible icon/full
@@ -182,7 +192,7 @@ export function Sidebar() {
       >
         {/* Logo */}
         <div className="flex items-center justify-between h-16 px-4 border-b border-white/10 shrink-0">
-          <div className={cn("flex items-center gap-3 overflow-hidden", !sidebarOpen && "lg:justify-center lg:w-full")}>
+          <div className="flex items-center gap-3 overflow-hidden">
             <div className="h-8 w-8 shrink-0 rounded-lg bg-white/20 flex items-center justify-center font-bold text-sm">
               EP
             </div>
@@ -200,7 +210,7 @@ export function Sidebar() {
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 overflow-y-auto py-3 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-white/20">
+        <nav className="flex-1 min-h-0 overflow-y-auto py-3 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-white/20">
           {navGroups.map((group, idx) => (
             <div key={idx} className="mb-1">
               {group.title && (
@@ -219,22 +229,26 @@ export function Sidebar() {
                     href={item.href}
                     onClick={handleLinkClick}
                     className={cn(
-                      "flex items-center gap-3 mx-2 mb-1 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150",
+                      "relative flex items-center mx-2 mb-1 px-3 py-2.5 rounded-lg text-sm font-medium",
                       isActive
                         ? "bg-white/20 text-white"
-                        : "text-white/70 hover:bg-white/10 hover:text-white",
-                      !sidebarOpen && "lg:justify-center lg:px-2"
+                        : "text-white/70 hover:bg-white/10 hover:text-white"
                     )}
                     title={!sidebarOpen ? item.label : undefined}
                   >
-                    <span className="shrink-0">{item.icon}</span>
-                    <span className={cn("truncate", !sidebarOpen && "lg:hidden")}>
+                    <span className="shrink-0 relative z-10">{item.icon}</span>
+                    <span
+                      className={cn(
+                        "absolute left-10 truncate transition-all duration-150",
+                        !sidebarOpen && "lg:opacity-0 lg:translate-x-2 lg:pointer-events-none"
+                      )}
+                    >
                       {item.label}
                     </span>
                     {item.badge !== undefined && item.badge > 0 && (
                       <span className={cn(
-                        "ml-auto bg-white/20 text-white text-xs px-1.5 py-0.5 rounded-full min-w-[20px] text-center",
-                        !sidebarOpen && "lg:hidden"
+                        "ml-auto bg-white/20 text-white text-xs px-1.5 py-0.5 rounded-full min-w-[20px] text-center transition-all duration-150",
+                        !sidebarOpen && "lg:opacity-0 lg:pointer-events-none"
                       )}>
                         {item.badge}
                       </span>
@@ -265,14 +279,6 @@ export function Sidebar() {
             </div>
           </div>
         </div>
-
-        {/* Collapse toggle button (desktop) */}
-        <button
-          onClick={toggleSidebar}
-          className="hidden lg:flex absolute -right-3 top-20 h-6 w-6 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--card)] text-[var(--muted-foreground)] shadow-sm hover:text-[var(--foreground)] transition-colors"
-        >
-          {sidebarOpen ? <ChevronLeft className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-        </button>
       </aside>
     </>
   );

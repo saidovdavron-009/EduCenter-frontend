@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/modal";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { formatDate } from "@/lib/utils";
+import { formatDate, formatPhone, formatPhoneInput } from "@/lib/utils";
 import { leadsApi, subjectsApi, studentsApi } from "@/lib/api";
 import toast from "react-hot-toast";
 
@@ -188,7 +188,7 @@ export default function LeadsPage() {
                   {lead.sourceId && <span className="text-[10px] text-[var(--muted-foreground)] bg-[var(--muted)] px-2 py-0.5 rounded-full">{sourceMap.get(lead.sourceId) ?? "—"}</span>}
                 </div>
                 <div className="flex gap-3 mt-1 text-xs text-[var(--muted-foreground)]">
-                  <span className="flex items-center gap-1"><Phone className="h-3 w-3" />{lead.phone}</span>
+                  <span className="flex items-center gap-1"><Phone className="h-3 w-3" />{formatPhone(lead.phone)}</span>
                   {lead.interestSubjectId && <span>{subjectMap.get(lead.interestSubjectId) ?? "—"}</span>}
                   <span>{formatDate(lead.createdAt)}</span>
                 </div>
@@ -217,7 +217,7 @@ export default function LeadsPage() {
           <DialogHeader><DialogTitle>Yangi lid</DialogTitle></DialogHeader>
           <div className="p-6 space-y-4">
             <Input label="To'liq ism *" value={form.fullName} onChange={(e) => setForm((f) => ({ ...f, fullName: e.target.value }))} placeholder="Ism Familiya" />
-            <Input label="Telefon *" value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} placeholder="+998 90 ..." />
+            <Input label="Telefon *" value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: formatPhoneInput(e.target.value) }))} placeholder="+998 90 ..." />
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="text-sm font-medium mb-1.5 block">Manba</label>

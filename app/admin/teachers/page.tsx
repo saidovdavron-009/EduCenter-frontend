@@ -20,6 +20,7 @@ interface TeacherRow {
   subjects: string[];
   salary: number;
   groupCount: number;
+  maxGroups: number | null;
   isActive: boolean;
 }
 
@@ -126,7 +127,7 @@ export default function TeachersPage() {
                   <TableCell>
                     <p className="text-sm font-medium">{formatCurrency(row.salary)}</p>
                   </TableCell>
-                  <TableCell><span className="text-sm text-[var(--muted-foreground)]">{row.groupCount} ta</span></TableCell>
+                  <TableCell><span className="text-sm text-[var(--muted-foreground)]">{row.groupCount}{row.maxGroups != null ? ` / ${row.maxGroups}` : ""} ta</span></TableCell>
                   <TableCell>
                     <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${row.isActive ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-800"}`}>
                       {row.isActive ? "Faol" : "Nofaol"}
@@ -137,7 +138,7 @@ export default function TeachersPage() {
                       <Link href={`/admin/teachers/${row.id}`}>
                         <Button variant="ghost" size="icon-sm"><Eye className="h-4 w-4" /></Button>
                       </Link>
-                      <Link href={`/admin/teachers/${row.id}/edit`}>
+                      <Link href={`/admin/teachers/${row.id}/edit?back=/admin/teachers`}>
                         <Button variant="ghost" size="icon-sm"><Pencil className="h-4 w-4" /></Button>
                       </Link>
                       <Button variant="ghost" size="icon-sm"

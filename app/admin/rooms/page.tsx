@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Modal, ModalHeader, ModalTitle, ModalFooter } from "@/components/ui/modal";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { roomsApi, branchesApi } from "@/lib/api";
 import toast from "react-hot-toast";
@@ -77,6 +77,12 @@ export default function RoomsPage() {
     onError: (e) => toast.error(extractErrorMessage(e)),
   });
 
+  const toggleActiveMutation = useMutation({
+    mutationFn: ({ id, isActive }: { id: string; isActive: boolean }) => roomsApi.update(id, { isActive }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["rooms"] }),
+    onError: (e) => toast.error(extractErrorMessage(e)),
+  });
+
   const openAdd = () => { setEditId(null); setForm({ ...emptyForm, branchId: branches[0]?.id ?? "" }); setOpen(true); };
   const openEdit = (r: Room) => { setEditId(r.id); setForm({ name: r.name, branchId: r.branchId, capacity: String(r.capacity) }); setOpen(true); };
 
@@ -140,7 +146,13 @@ export default function RoomsPage() {
               </div>
               <div className="flex items-center justify-between text-sm">
                 <span className="flex items-center gap-1.5 text-[var(--muted-foreground)]"><Users className="h-3.5 w-3.5" />Sig'im: {r.capacity} kishi</span>
-                <Badge variant={r.isActive ? "success" : "secondary"}>{r.isActive ? "Faol" : "Nofaol"}</Badge>
+                <div className="flex items-center gap-2 text-xs text-[var(--muted-foreground)]">
+                  <span>{r.isActive ? "Faol" : "Nofaol"}</span>
+                  <Switch
+                    checked={r.isActive}
+                    onCheckedChange={(v) => toggleActiveMutation.mutate({ id: r.id, isActive: v })}
+                  />
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -167,7 +179,7 @@ export default function RoomsPage() {
               </Select>
             )}
           </div>
-          <Input label="Sig'im (kishi) *" type="number" value={form.capacity} onChange={(e) => setForm((f) => ({ ...f, capacity: e.target.value }))} placeholder="20" />
+          <Input label="Sig'im (kishi) *" type="number" value={form.capacity} onChange={(e) => setForm((f) => ({ ...f, capacity: e.target.value }))} placeholder="Sig'imni kiriting" />
         </div>
         <ModalFooter>
           <Button variant="outline" onClick={() => setOpen(false)}>Bekor</Button>
