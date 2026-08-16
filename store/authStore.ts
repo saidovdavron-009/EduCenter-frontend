@@ -13,11 +13,18 @@ interface ProfileResponse {
 interface AuthState {
   user: AuthUser | null;
   isAuthenticated: boolean;
+  // Zustand's persist middleware restores state from localStorage
+  // asynchronously after first mount (to avoid SSR hydration mismatches).
+  // Route guards that read isAuthenticated must wait for this to flip true
+  // first, otherwise an already-logged-in user hard-reloading a page briefly
+  // reads isAuthenticated:false and gets bounced to login.
+  hasHydrated: boolean;
   setAuth: (user: AuthUser) => void;
   setUser: (user: AuthUser) => void;
   hydrateProfile: (profileData: ProfileResponse) => void;
   logout: () => void;
   hasRole: (role: UserRole | UserRole[]) => boolean;
+  setHasHydrated: (value: boolean) => void;
 }
 
 // Older builds stored raw tokens in localStorage; now that they live in httpOnly
@@ -32,6 +39,8 @@ export const useAuthStore = create<AuthState>()(
     (set, get) => ({
       user: null,
       isAuthenticated: false,
+      hasHydrated: false,
+      setHasHydrated: (value) => set({ hasHydrated: value }),
 
       // accessToken/refreshToken live in httpOnly cookies the backend sets on
       // /auth/login — they're never readable by JS, so the store only tracks
@@ -86,6 +95,9 @@ export const useAuthStore = create<AuthState>()(
         user: state.user,
         isAuthenticated: state.isAuthenticated,
       }),
+      onRehydrateStorage: () => (state) => {
+        state?.setHasHydrated(true);
+      },
     }
   )
 );
