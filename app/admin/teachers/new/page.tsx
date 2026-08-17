@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { MultiSelect } from "@/components/ui/multi-select";
 import toast from "react-hot-toast";
 
 const teacherSchema = z.object({
@@ -47,13 +48,6 @@ export default function NewTeacherPage() {
   });
 
   const selectedSubjects = watch("subjects") ?? [];
-  const toggleSubject = (name: string) => {
-    setValue(
-      "subjects",
-      selectedSubjects.includes(name) ? selectedSubjects.filter((s) => s !== name) : [...selectedSubjects, name],
-      { shouldValidate: true },
-    );
-  };
 
   const mutation = useMutation({
     mutationFn: (data: TeacherFormData) =>
@@ -154,20 +148,14 @@ export default function NewTeacherPage() {
             </div>
             <Input label="Telefon *" placeholder="+998 90 123 45 67" error={errors.phone?.message} {...register("phone", { onChange: (e) => { e.target.value = formatPhoneInput(e.target.value); } })} />
             <div className="sm:col-span-2">
-              <label className="block text-sm font-medium text-[var(--foreground)] mb-1.5">Fanlar *</label>
-              <div className="flex flex-wrap gap-2">
-                {subjects.map((s) => (
-                  <button key={s.id} type="button"
-                    onClick={() => toggleSubject(s.name)}
-                    className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors ${selectedSubjects.includes(s.name) ? "bg-[#1E3A5F] text-white border-[#1E3A5F]" : "border-[var(--border)] hover:border-[#1E3A5F]"}`}>
-                    {s.name}
-                  </button>
-                ))}
-                {subjects.length === 0 && (
-                  <p className="text-sm text-[var(--muted-foreground)]">Avval "Fanlar" bo'limida fan qo'shing</p>
-                )}
-              </div>
-              {errors.subjects && <p className="mt-1.5 text-xs text-red-500">{errors.subjects.message}</p>}
+              <MultiSelect
+                label="Fanlar *"
+                placeholder={subjects.length === 0 ? "Avval \"Fanlar\" bo'limida fan qo'shing" : "Fanlarni tanlang"}
+                options={subjects.map((s) => ({ value: s.name, label: s.name }))}
+                value={selectedSubjects}
+                onChange={(v) => setValue("subjects", v, { shouldValidate: true })}
+                error={errors.subjects?.message}
+              />
             </div>
             <Input
               label="Tajriba (yil)"
