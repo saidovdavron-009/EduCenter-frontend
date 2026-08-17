@@ -47,9 +47,11 @@ export default function FinancePage() {
   const { data } = useQuery({
     queryKey: ["payments", { statusFilter }],
     queryFn: () =>
-      paymentsApi.getAll({ status: statusFilter === "ALL" ? undefined : statusFilter, limit: 100 }).then(
-        (r) => r.data as { data: PaymentRow[] }
-      ),
+      paymentsApi.getAll({
+        status: statusFilter === "ALL" || statusFilter === "DEBTOR" ? undefined : statusFilter,
+        debtorsOnly: statusFilter === "DEBTOR" ? true : undefined,
+        limit: 100,
+      }).then((r) => r.data as { data: PaymentRow[] }),
     placeholderData: (prev) => prev,
   });
   const payments = data?.data ?? [];
@@ -113,6 +115,7 @@ export default function FinancePage() {
           <SelectItem value="PAID">To'langan</SelectItem>
           <SelectItem value="PENDING">Kutilmoqda</SelectItem>
           <SelectItem value="OVERDUE">Muddati o'tgan</SelectItem>
+          <SelectItem value="DEBTOR">Qarzdorlar</SelectItem>
         </SelectContent>
       </Select>
 

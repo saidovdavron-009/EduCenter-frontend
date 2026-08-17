@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { roomsApi, branchesApi } from "@/lib/api";
 import toast from "react-hot-toast";
 
-interface Room { id: string; branchId: string; name: string; capacity: number; isActive: boolean; }
+interface Room { id: string; branchId: string; name: string; capacity: number; floor: number | null; isActive: boolean; }
 interface BranchOption { id: string; name: string; }
 
 function extractErrorMessage(error: unknown): string {
@@ -21,7 +21,7 @@ function extractErrorMessage(error: unknown): string {
   return data?.message || "Xatolik yuz berdi";
 }
 
-const emptyForm = { name: "", branchId: "", capacity: "" };
+const emptyForm = { name: "", branchId: "", capacity: "", floor: "" };
 
 export default function RoomsPage() {
   const queryClient = useQueryClient();
@@ -49,7 +49,7 @@ export default function RoomsPage() {
   const inactiveCount = rooms.length - activeCount;
 
   const createMutation = useMutation({
-    mutationFn: () => roomsApi.create({ name: form.name, branchId: form.branchId, capacity: Number(form.capacity) }),
+    mutationFn: () => roomsApi.create({ name: form.name, branchId: form.branchId, capacity: Number(form.capacity), floor: form.floor ? Number(form.floor) : undefined }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["rooms"] });
       toast.success("Xona qo'shildi");
@@ -59,7 +59,7 @@ export default function RoomsPage() {
   });
 
   const updateMutation = useMutation({
-    mutationFn: () => roomsApi.update(editId as string, { name: form.name, capacity: Number(form.capacity) }),
+    mutationFn: () => roomsApi.update(editId as string, { name: form.name, capacity: Number(form.capacity), floor: form.floor ? Number(form.floor) : undefined }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["rooms"] });
       toast.success("Yangilandi");
@@ -84,7 +84,7 @@ export default function RoomsPage() {
   });
 
   const openAdd = () => { setEditId(null); setForm({ ...emptyForm, branchId: branches[0]?.id ?? "" }); setOpen(true); };
-  const openEdit = (r: Room) => { setEditId(r.id); setForm({ name: r.name, branchId: r.branchId, capacity: String(r.capacity) }); setOpen(true); };
+  const openEdit = (r: Room) => { setEditId(r.id); setForm({ name: r.name, branchId: r.branchId, capacity: String(r.capacity), floor: r.floor != null ? String(r.floor) : "" }); setOpen(true); };
 
   const handleSave = () => {
     if (!form.name.trim() || !form.capacity || !form.branchId) { toast.error("Filial, nom va sig'imni kiriting"); return; }
@@ -180,6 +180,7 @@ export default function RoomsPage() {
             )}
           </div>
           <Input label="Sig'im (kishi) *" type="number" value={form.capacity} onChange={(e) => setForm((f) => ({ ...f, capacity: e.target.value }))} placeholder="Sig'imni kiriting" />
+          <Input label="Qavat" type="number" value={form.floor} onChange={(e) => setForm((f) => ({ ...f, floor: e.target.value }))} placeholder="1" />
         </div>
         <ModalFooter>
           <Button variant="outline" onClick={() => setOpen(false)}>Bekor</Button>

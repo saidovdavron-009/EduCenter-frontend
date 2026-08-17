@@ -1,7 +1,7 @@
 "use client";
 import React from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Eye, Pencil, Trash2 } from "lucide-react";
+import { Plus, Eye, Pencil, Trash2, KeyRound, EyeOff } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { UserAvatar } from "@/components/ui/avatar";
@@ -9,9 +9,15 @@ import { useConfirm } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Modal, ModalHeader, ModalTitle, ModalFooter } from "@/components/ui/modal";
 import { formatCurrency, formatPhone } from "@/lib/utils";
 import { teachersApi } from "@/lib/api";
 import toast from "react-hot-toast";
+
+function extractErrorMessage(error: unknown): string {
+  const data = (error as { response?: { data?: { message?: string } } })?.response?.data;
+  return data?.message || "Xatolik yuz berdi";
+}
 
 interface TeacherRow {
   id: string;
@@ -29,6 +35,10 @@ export default function TeachersPage() {
   const confirm = useConfirm();
   const [search, setSearch] = React.useState("");
   const [statusFilter, setStatusFilter] = React.useState("ACTIVE");
+  const [passwordTarget, setPasswordTarget] = React.useState<TeacherRow | null>(null);
+  const [newPassword, setNewPassword] = React.useState("");
+  const [confirmPassword, setConfirmPassword] = React.useState("");
+  const [showPassword, setShowPassword] = React.useState(false);
 
   const { data } = useQuery({
     queryKey: ["teachers", { search, statusFilter }],
@@ -54,6 +64,28 @@ export default function TeachersPage() {
   const handleDelete = async (id: string) => {
     if (!(await confirm("O'qituvchini nofaol qilishni tasdiqlaysizmi? U kirish imkoniyatini yo'qotadi va faol ro'yxatlarda ko'rinmay qoladi."))) return;
     deleteMutation.mutate(id);
+  };
+
+  const resetPasswordMutation = useMutation({
+    mutationFn: () => teachersApi.resetPassword(passwordTarget!.id, newPassword),
+    onSuccess: () => {
+      toast.success("Parol muvaffaqiyatli yangilandi");
+      setPasswordTarget(null);
+    },
+    onError: (e) => toast.error(extractErrorMessage(e)),
+  });
+
+  const openPasswordModal = (row: TeacherRow) => {
+    setPasswordTarget(row);
+    setNewPassword("");
+    setConfirmPassword("");
+    setShowPassword(false);
+  };
+
+  const handleResetPassword = () => {
+    if (newPassword.length < 6) { toast.error("Parol kamida 6 ta belgidan iborat bo'lishi kerak"); return; }
+    if (newPassword !== confirmPassword) { toast.error("Parollar mos kelmadi"); return; }
+    resetPasswordMutation.mutate();
   };
 
   return (
@@ -141,6 +173,10 @@ export default function TeachersPage() {
                       <Link href={`/admin/teachers/${row.id}/edit?back=/admin/teachers`}>
                         <Button variant="ghost" size="icon-sm"><Pencil className="h-4 w-4" /></Button>
                       </Link>
+                      <Button variant="ghost" size="icon-sm" title="Parolni yangilash"
+                        onClick={() => openPasswordModal(row)}>
+                        <KeyRound className="h-4 w-4" />
+                      </Button>
                       <Button variant="ghost" size="icon-sm"
                         className="text-red-500 hover:text-red-600 hover:bg-red-50"
                         onClick={() => handleDelete(row.id)}>
@@ -154,6 +190,38 @@ export default function TeachersPage() {
           </TableBody>
         </Table>
       </div>
+
+      <Modal open={!!passwordTarget} onOpenChange={(open) => { if (!open) setPasswordTarget(null); }} size="sm">
+        <ModalHeader><ModalTitle>Parolni yangilash</ModalTitle></ModalHeader>
+        <div className="p-6 space-y-3">
+          <p className="text-sm text-[var(--muted-foreground)]">
+            {passwordTarget?.fullName} uchun yangi parol o&apos;rnatiladi. Joriy parol talab qilinmaydi.
+          </p>
+          <Input
+            label="Yangi parol *"
+            type={showPassword ? "text" : "password"}
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)}
+            placeholder="Kamida 6 ta belgi"
+            rightIcon={
+              <button type="button" className="pointer-events-auto" onClick={() => setShowPassword((v) => !v)} tabIndex={-1}>
+                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            }
+          />
+          <Input
+            label="Yangi parolni takrorlang *"
+            type={showPassword ? "text" : "password"}
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            placeholder="Parolni qayta kiriting"
+          />
+        </div>
+        <ModalFooter>
+          <Button variant="outline" onClick={() => setPasswordTarget(null)}>Bekor</Button>
+          <Button onClick={handleResetPassword} loading={resetPasswordMutation.isPending}>O&apos;zgartirish</Button>
+        </ModalFooter>
+      </Modal>
     </div>
   );
 }

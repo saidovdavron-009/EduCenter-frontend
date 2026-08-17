@@ -27,6 +27,7 @@ interface TeacherDetail {
   salary: number;
   isActive: boolean;
   bio: string | null;
+  hireDate: string | null;
 }
 
 const teacherEditSchema = z.object({
@@ -38,6 +39,7 @@ const teacherEditSchema = z.object({
   maxGroups: z.string().optional(),
   salaryType: z.enum(["HOURLY", "MONTHLY"]),
   salary: z.number().min(0, "Ish haqi kiriting"),
+  hireDate: z.string().optional(),
   bio: z.string().optional(),
   isActive: z.enum(["true", "false"]),
 });
@@ -77,6 +79,7 @@ function EditTeacherForm({ id }: { id: string }) {
         maxGroups: teacher.maxGroups != null ? String(teacher.maxGroups) : "",
         salaryType: teacher.salaryType,
         salary: teacher.salary,
+        hireDate: teacher.hireDate ? teacher.hireDate.slice(0, 10) : "",
         bio: teacher.bio || "",
         isActive: teacher.isActive ? "true" : "false",
       });
@@ -94,6 +97,7 @@ function EditTeacherForm({ id }: { id: string }) {
         maxGroups: data.maxGroups ? Number(data.maxGroups) : undefined,
         salaryType: data.salaryType,
         salary: data.salary,
+        hireDate: data.hireDate || undefined,
         bio: data.bio || undefined,
         isActive: data.isActive === "true",
       }),
@@ -170,6 +174,12 @@ function EditTeacherForm({ id }: { id: string }) {
               type="number"
               error={errors.salary?.message}
               {...register("salary", { valueAsNumber: true })}
+            />
+            <Input
+              label="Ish boshlagan sana"
+              type="date"
+              error={errors.hireDate?.message}
+              {...register("hireDate")}
             />
           </CardContent>
         </Card>

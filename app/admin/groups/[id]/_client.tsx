@@ -50,6 +50,8 @@ interface GroupDetail {
 
 interface SubjectOption { id: string; name: string; }
 
+interface StudentOption { id: string; fullName: string; phone: string; }
+
 interface NewStudentForm {
   fullName: string;
   phone: string;
@@ -73,6 +75,8 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
   const router = useRouter();
   const queryClient = useQueryClient();
   const [addOpen, setAddOpen] = React.useState(false);
+  const [addMode, setAddMode] = React.useState<"existing" | "new">("existing");
+  const [selectedStudentId, setSelectedStudentId] = React.useState("");
   const [studentForm, setStudentForm] = React.useState<NewStudentForm>(emptyStudentForm);
   const [created, setCreated] = React.useState<CreatedCredentials | null>(null);
   const [showPassword, setShowPassword] = React.useState(false);
@@ -98,6 +102,27 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
   const schedules = group?.schedules ?? [];
   const fillPct = group ? Math.round((group.currentCount / group.capacity) * 100) : 0;
 
+  const { data: allStudentsRes } = useQuery({
+    queryKey: ["students-options"],
+    queryFn: () => studentsApi.getAll({ limit: 1000 }).then((r) => r.data as { data: StudentOption[] }),
+    enabled: addOpen,
+  });
+  const availableStudents = React.useMemo(() => {
+    const memberIds = new Set(students.map((s) => s.id));
+    return (allStudentsRes?.data ?? []).filter((s) => !memberIds.has(s.id));
+  }, [allStudentsRes, students]);
+
+  const addExistingStudentMutation = useMutation({
+    mutationFn: () => groupsApi.addStudent(id, selectedStudentId),
+    onSuccess: () => {
+      toast.success("O'quvchi guruhga qo'shildi");
+      queryClient.invalidateQueries({ queryKey: ["group", id] });
+      queryClient.invalidateQueries({ queryKey: ["students-options"] });
+      setAddOpen(false);
+    },
+    onError: (e) => toast.error(extractErrorMessage(e)),
+  });
+
   const createStudentMutation = useMutation({
     mutationFn: () => studentsApi.create({
       fullName: studentForm.fullName,
@@ -115,12 +140,24 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
     onError: (e) => toast.error(extractErrorMessage(e)),
   });
 
-  const openAddStudent = () => { setStudentForm(emptyStudentForm); setCreated(null); setShowPassword(false); setAddOpen(true); };
+  const openAddStudent = () => {
+    setStudentForm(emptyStudentForm);
+    setCreated(null);
+    setShowPassword(false);
+    setAddMode("existing");
+    setSelectedStudentId("");
+    setAddOpen(true);
+  };
 
   const handleCreateStudent = () => {
     if (!studentForm.fullName || studentForm.fullName.length < 3) { toast.error("Ism kamida 3 ta belgi"); return; }
     if (!studentForm.phone || studentForm.phone.length < 9) { toast.error("Telefon raqam kiriting"); return; }
     createStudentMutation.mutate();
+  };
+
+  const handleAddExisting = () => {
+    if (!selectedStudentId) { toast.error("O'quvchini tanlang"); return; }
+    addExistingStudentMutation.mutate();
   };
 
   const copyCredentials = () => {
@@ -299,50 +336,96 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
           </>
         ) : (
           <>
-            <ModalHeader><ModalTitle>Yangi o'quvchi qo'shish</ModalTitle></ModalHeader>
-            <div className="p-6 space-y-3">
-              <Input
-                label="To'liq ismi *"
-                placeholder="Ism Familya Otasining ismi"
-                value={studentForm.fullName}
-                onChange={(e) => setStudentForm((f) => ({ ...f, fullName: e.target.value }))}
-              />
-              <Input
-                label="Telefon raqam *"
-                placeholder="+998 90 123 45 67"
-                value={studentForm.phone}
-                onChange={(e) => setStudentForm((f) => ({ ...f, phone: formatPhoneInput(e.target.value) }))}
-              />
-              <Input
-                label="Ota-ona telefoni"
-                placeholder="+998 90 123 45 67"
-                value={studentForm.parentPhone}
-                onChange={(e) => setStudentForm((f) => ({ ...f, parentPhone: formatPhoneInput(e.target.value) }))}
-              />
-              <div className="grid grid-cols-2 gap-3">
-                <Input
-                  label="Tug'ilgan sana"
-                  type="date"
-                  value={studentForm.dob}
-                  onChange={(e) => setStudentForm((f) => ({ ...f, dob: e.target.value }))}
-                />
-                <div>
-                  <label className="block text-sm font-medium text-[var(--foreground)] mb-1.5">Jinsi</label>
-                  <Select value={studentForm.gender} onValueChange={(v) => setStudentForm((f) => ({ ...f, gender: v as "MALE" | "FEMALE" }))}>
-                    <SelectTrigger><SelectValue placeholder="Tanlang" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="MALE">Erkak</SelectItem>
-                      <SelectItem value="FEMALE">Ayol</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+            <ModalHeader><ModalTitle>O'quvchi qo'shish</ModalTitle></ModalHeader>
+            <div className="px-6 pt-4">
+              <div className="flex gap-1 p-1 bg-[var(--muted)] rounded-lg">
+                <button
+                  type="button"
+                  onClick={() => setAddMode("existing")}
+                  className={`flex-1 text-sm font-medium rounded-md py-1.5 transition-colors ${addMode === "existing" ? "bg-[var(--card)] text-[#1E3A5F] shadow-sm" : "text-[var(--muted-foreground)]"}`}
+                >
+                  Mavjud o'quvchi
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAddMode("new")}
+                  className={`flex-1 text-sm font-medium rounded-md py-1.5 transition-colors ${addMode === "new" ? "bg-[var(--card)] text-[#1E3A5F] shadow-sm" : "text-[var(--muted-foreground)]"}`}
+                >
+                  Yangi o'quvchi
+                </button>
               </div>
-              <p className="text-xs text-[var(--muted-foreground)]">O'quvchi shu "{group?.name}" guruhiga avtomatik qo'shiladi.</p>
             </div>
-            <ModalFooter>
-              <Button variant="outline" onClick={() => setAddOpen(false)}>Bekor</Button>
-              <Button onClick={handleCreateStudent} loading={createStudentMutation.isPending}>Saqlash</Button>
-            </ModalFooter>
+
+            {addMode === "existing" ? (
+              <>
+                <div className="p-6 pt-4 space-y-3">
+                  <div>
+                    <label className="block text-sm font-medium text-[var(--foreground)] mb-1.5">O'quvchini tanlang *</label>
+                    <Select value={selectedStudentId} onValueChange={setSelectedStudentId}>
+                      <SelectTrigger>
+                        <SelectValue placeholder={availableStudents.length ? "O'quvchini tanlang" : "Qo'shish mumkin bo'lgan o'quvchi yo'q"} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {availableStudents.map((s) => (
+                          <SelectItem key={s.id} value={s.id}>{s.fullName}{s.phone ? ` — ${s.phone}` : ""}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <p className="text-xs text-[var(--muted-foreground)]">Tanlangan o'quvchi shu "{group?.name}" guruhiga qo'shiladi.</p>
+                </div>
+                <ModalFooter>
+                  <Button variant="outline" onClick={() => setAddOpen(false)}>Bekor</Button>
+                  <Button onClick={handleAddExisting} loading={addExistingStudentMutation.isPending} disabled={!availableStudents.length}>Qo'shish</Button>
+                </ModalFooter>
+              </>
+            ) : (
+              <>
+                <div className="p-6 space-y-3">
+                  <Input
+                    label="To'liq ismi *"
+                    placeholder="Ism Familya Otasining ismi"
+                    value={studentForm.fullName}
+                    onChange={(e) => setStudentForm((f) => ({ ...f, fullName: e.target.value }))}
+                  />
+                  <Input
+                    label="Telefon raqam *"
+                    placeholder="+998 90 123 45 67"
+                    value={studentForm.phone}
+                    onChange={(e) => setStudentForm((f) => ({ ...f, phone: formatPhoneInput(e.target.value) }))}
+                  />
+                  <Input
+                    label="Ota-ona telefoni"
+                    placeholder="+998 90 123 45 67"
+                    value={studentForm.parentPhone}
+                    onChange={(e) => setStudentForm((f) => ({ ...f, parentPhone: formatPhoneInput(e.target.value) }))}
+                  />
+                  <div className="grid grid-cols-2 gap-3">
+                    <Input
+                      label="Tug'ilgan sana"
+                      type="date"
+                      value={studentForm.dob}
+                      onChange={(e) => setStudentForm((f) => ({ ...f, dob: e.target.value }))}
+                    />
+                    <div>
+                      <label className="block text-sm font-medium text-[var(--foreground)] mb-1.5">Jinsi</label>
+                      <Select value={studentForm.gender} onValueChange={(v) => setStudentForm((f) => ({ ...f, gender: v as "MALE" | "FEMALE" }))}>
+                        <SelectTrigger><SelectValue placeholder="Tanlang" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="MALE">Erkak</SelectItem>
+                          <SelectItem value="FEMALE">Ayol</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <p className="text-xs text-[var(--muted-foreground)]">O'quvchi shu "{group?.name}" guruhiga avtomatik qo'shiladi.</p>
+                </div>
+                <ModalFooter>
+                  <Button variant="outline" onClick={() => setAddOpen(false)}>Bekor</Button>
+                  <Button onClick={handleCreateStudent} loading={createStudentMutation.isPending}>Saqlash</Button>
+                </ModalFooter>
+              </>
+            )}
           </>
         )}
       </Modal>

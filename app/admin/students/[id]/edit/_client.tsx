@@ -11,9 +11,17 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { studentsApi } from "@/lib/api";
+import { studentsApi, subjectsApi, groupsApi } from "@/lib/api";
 import { formatPhoneInput } from "@/lib/utils";
 import toast from "react-hot-toast";
+
+interface StudentGroup {
+  id: string;
+  name: string;
+  subject_name: string | null;
+  teacher_name: string | null;
+  joined_at: string;
+}
 
 interface StudentDetail {
   id: string;
@@ -27,7 +35,11 @@ interface StudentDetail {
   status: "ACTIVE" | "FROZEN" | "GRADUATED";
   referralSource: string | null;
   notes: string | null;
+  groups: StudentGroup[];
 }
+
+interface SubjectOption { id: string; name: string; }
+interface GroupOption { id: string; name: string; subjectName: string; }
 
 const studentEditSchema = z.object({
   fullName: z.string().min(3, "Ism kamida 3 ta belgi"),
@@ -66,6 +78,21 @@ function EditStudentForm({ id }: { id: string }) {
     defaultValues: { status: "ACTIVE", gender: undefined },
   });
 
+  const [subjectId, setSubjectId] = React.useState("");
+  const [groupId, setGroupId] = React.useState("");
+  const [originalGroupId, setOriginalGroupId] = React.useState("");
+
+  const { data: subjects = [] } = useQuery({
+    queryKey: ["subjects-options"],
+    queryFn: () => subjectsApi.getAll().then((r) => r.data as SubjectOption[]),
+  });
+
+  const { data: groupsRes } = useQuery({
+    queryKey: ["groups-options", subjectId],
+    queryFn: () => groupsApi.getAll({ limit: 100, subjectId: subjectId || undefined }).then((r) => r.data as { data: GroupOption[] }),
+  });
+  const groups = groupsRes?.data ?? [];
+
   React.useEffect(() => {
     if (student) {
       reset({
@@ -83,10 +110,29 @@ function EditStudentForm({ id }: { id: string }) {
     }
   }, [student, reset]);
 
+  // The student's current group is known from GET /students/:id, but only its
+  // subject NAME (not id) — resolve that against the subjects list once both
+  // have loaded so the "Fan" dropdown starts pre-filtered to the right group.
+  React.useEffect(() => {
+    if (!student) return;
+    const currentGroup = student.groups?.[0];
+    if (!currentGroup) return;
+    setGroupId(currentGroup.id);
+    setOriginalGroupId(currentGroup.id);
+    if (subjects.length > 0) {
+      const subject = subjects.find((s) => s.name === currentGroup.subject_name);
+      if (subject) setSubjectId(subject.id);
+    }
+  }, [student, subjects]);
+
   const mutation = useMutation({
-    mutationFn: (data: StudentEditFormData) => {
+    mutationFn: async (data: StudentEditFormData) => {
       const cleaned = Object.fromEntries(Object.entries(data).filter(([, v]) => v !== "" && v !== undefined));
-      return studentsApi.update(id, cleaned);
+      await studentsApi.update(id, cleaned);
+      if (groupId !== originalGroupId) {
+        if (originalGroupId) await groupsApi.removeStudent(originalGroupId, id);
+        if (groupId) await groupsApi.addStudent(groupId, id);
+      }
     },
     onSuccess: () => {
       toast.success("O'quvchi ma'lumotlari yangilandi");
@@ -156,6 +202,32 @@ function EditStudentForm({ id }: { id: string }) {
         <Card>
           <CardHeader><CardTitle>Qo'shimcha ma'lumotlar</CardTitle></CardHeader>
           <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-[var(--foreground)] mb-1.5">Fan</label>
+              <Select value={subjectId} onValueChange={(v) => { setSubjectId(v); setGroupId(""); }}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Fan tanlang" />
+                </SelectTrigger>
+                <SelectContent>
+                  {subjects.map((s) => (
+                    <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-[var(--foreground)] mb-1.5">Guruh</label>
+              <Select value={groupId} onValueChange={setGroupId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Guruh tanlang" />
+                </SelectTrigger>
+                <SelectContent>
+                  {groups.map((g) => (
+                    <SelectItem key={g.id} value={g.id}>{g.name} — {g.subjectName}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             <Input label="Qayerdan keldi" {...register("referralSource")} />
             <div className="sm:col-span-2">
               <Input label="Izohlar" {...register("notes")} />

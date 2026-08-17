@@ -24,6 +24,7 @@ const teacherSchema = z.object({
   maxGroups: z.string().optional(),
   salaryType: z.enum(["HOURLY", "MONTHLY"]),
   salary: z.number().min(0, "Ish haqi kiriting"),
+  hireDate: z.string().optional(),
   bio: z.string().optional(),
 });
 
@@ -194,6 +195,12 @@ export default function NewTeacherPage() {
               type="number"
               error={errors.salary?.message}
               {...register("salary", { valueAsNumber: true })}
+            />
+            <Input
+              label="Ish boshlagan sana"
+              type="date"
+              error={errors.hireDate?.message}
+              {...register("hireDate")}
             />
           </CardContent>
         </Card>

@@ -5,7 +5,9 @@ import { Sidebar } from "./Sidebar";
 import { Header } from "./Header";
 import { BottomNav } from "./BottomNav";
 import { useAuthStore } from "@/store/authStore";
+import { useUIStore } from "@/store/uiStore";
 import { authApi } from "@/lib/api";
+import { cn } from "@/lib/utils";
 
 interface DashboardLayoutProps {
   children: React.ReactNode;
@@ -45,6 +47,7 @@ export function DashboardLayout({ children, title }: DashboardLayoutProps) {
   const router = useRouter();
   const isLoginPage = LOGIN_PATHS.includes(pathname);
   const { user, isAuthenticated, hasHydrated, hydrateProfile } = useAuthStore();
+  const { sidebarOpen } = useUIStore();
 
   // Auth + role gating now happens here instead of middleware.ts, since the
   // backend's httpOnly session cookie lives on a different domain and is
@@ -88,9 +91,14 @@ export function DashboardLayout({ children, title }: DashboardLayoutProps) {
   }
 
   return (
-    <div className="flex h-[100dvh] bg-[var(--background)] overflow-hidden">
+    <div className="h-[100dvh] bg-[var(--background)] overflow-hidden">
       <Sidebar />
-      <div className="flex flex-col flex-1 min-w-0 min-h-0 overflow-hidden">
+      <div
+        className={cn(
+          "flex flex-col h-full min-h-0 overflow-hidden transition-[margin] duration-300 ease-in-out",
+          sidebarOpen ? "lg:ml-64" : "lg:ml-16"
+        )}
+      >
         <Header title={title} />
         <main className="flex-1 min-h-0 overflow-y-auto p-3 sm:p-4 lg:p-6 pb-20 lg:pb-6">
           {children}

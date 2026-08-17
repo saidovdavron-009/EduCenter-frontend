@@ -168,6 +168,8 @@ export const studentsApi = {
   getGrades: (id: string, params?: Record<string, unknown>) =>
     api.get("/grades", { params: { ...params, studentId: id } }),
   getPayments: (id: string) => api.get("/payments", { params: { studentId: id } }),
+  resetPassword: (id: string, newPassword: string) =>
+    api.post(`/students/${id}/reset-password`, { newPassword }),
 };
 
 // Teachers
@@ -178,6 +180,8 @@ export const teachersApi = {
   update: (id: string, data: unknown) => api.patch(`/teachers/${id}`, data),
   delete: (id: string) => api.delete(`/teachers/${id}`),
   getGroups: (id: string) => api.get(`/teachers/${id}/groups`),
+  resetPassword: (id: string, newPassword: string) =>
+    api.post(`/teachers/${id}/reset-password`, { newPassword }),
 };
 
 // Groups

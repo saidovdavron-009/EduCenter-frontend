@@ -182,11 +182,14 @@ export function Sidebar() {
 
       <aside
         className={cn(
+          // Always fixed to the viewport (not a flex sibling) so its height can
+          // never be dragged along by the main content's scroll position —
+          // margin-left on the content pane (see dashboard-layout.tsx) reserves
+          // its space on desktop instead.
           "fixed top-0 left-0 z-30 h-full bg-[#1E3A5F] text-white flex flex-col transition-transform duration-300 ease-in-out",
           // Mobile: full-width drawer slides in/out
           sidebarOpen ? "translate-x-0 w-72 shadow-2xl" : "-translate-x-full w-72",
           // Desktop: always visible, collapsible icon/full
-          "lg:relative lg:z-auto",
           sidebarOpen ? "lg:translate-x-0 lg:w-64" : "lg:translate-x-0 lg:w-16"
         )}
       >
