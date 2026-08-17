@@ -5,9 +5,9 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { ArrowLeft, Save, Copy, Eye, EyeOff, CheckCircle2 } from "lucide-react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
-import { teachersApi } from "@/lib/api";
+import { teachersApi, subjectsApi } from "@/lib/api";
 import { formatPhoneInput } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,7 +18,7 @@ import toast from "react-hot-toast";
 const teacherSchema = z.object({
   fullName: z.string().min(3, "Ism kamida 3 ta belgi"),
   phone: z.string().min(9, "Telefon raqam kiriting"),
-  subjects: z.string().min(1, "Fan kiriting"),
+  subjects: z.array(z.string()).min(1, "Kamida bitta fan tanlang"),
   experience: z.string().optional(),
   maxGroups: z.string().optional(),
   salaryType: z.enum(["HOURLY", "MONTHLY"]),
@@ -28,6 +28,7 @@ const teacherSchema = z.object({
 
 type TeacherFormData = z.infer<typeof teacherSchema>;
 interface CreatedCredentials { loginId: string; tempPassword: string; }
+interface SubjectOption { id: string; name: string; }
 
 export default function NewTeacherPage() {
   const router = useRouter();
@@ -37,14 +38,27 @@ export default function NewTeacherPage() {
 
   const { register, handleSubmit, setValue, watch, formState: { errors } } = useForm<TeacherFormData>({
     resolver: zodResolver(teacherSchema),
-    defaultValues: { salaryType: "MONTHLY" },
+    defaultValues: { salaryType: "MONTHLY", subjects: [] },
   });
+
+  const { data: subjects = [] } = useQuery({
+    queryKey: ["subjects-options"],
+    queryFn: () => subjectsApi.getAll().then((r) => r.data as SubjectOption[]),
+  });
+
+  const selectedSubjects = watch("subjects") ?? [];
+  const toggleSubject = (name: string) => {
+    setValue(
+      "subjects",
+      selectedSubjects.includes(name) ? selectedSubjects.filter((s) => s !== name) : [...selectedSubjects, name],
+      { shouldValidate: true },
+    );
+  };
 
   const mutation = useMutation({
     mutationFn: (data: TeacherFormData) =>
       teachersApi.create({
         ...data,
-        subjects: data.subjects.split(",").map((s) => s.trim()),
         experience: data.experience ? Number(data.experience) : undefined,
         maxGroups: data.maxGroups ? Number(data.maxGroups) : undefined,
       }).then((r) => r.data as { loginId: string; tempPassword: string }),
@@ -140,12 +154,20 @@ export default function NewTeacherPage() {
             </div>
             <Input label="Telefon *" placeholder="+998 90 123 45 67" error={errors.phone?.message} {...register("phone", { onChange: (e) => { e.target.value = formatPhoneInput(e.target.value); } })} />
             <div className="sm:col-span-2">
-              <Input
-                label="Fanlar * (vergul bilan ajrating)"
-                placeholder="Ingliz tili, Matematika"
-                error={errors.subjects?.message}
-                {...register("subjects")}
-              />
+              <label className="block text-sm font-medium text-[var(--foreground)] mb-1.5">Fanlar *</label>
+              <div className="flex flex-wrap gap-2">
+                {subjects.map((s) => (
+                  <button key={s.id} type="button"
+                    onClick={() => toggleSubject(s.name)}
+                    className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors ${selectedSubjects.includes(s.name) ? "bg-[#1E3A5F] text-white border-[#1E3A5F]" : "border-[var(--border)] hover:border-[#1E3A5F]"}`}>
+                    {s.name}
+                  </button>
+                ))}
+                {subjects.length === 0 && (
+                  <p className="text-sm text-[var(--muted-foreground)]">Avval "Fanlar" bo'limida fan qo'shing</p>
+                )}
+              </div>
+              {errors.subjects && <p className="mt-1.5 text-xs text-red-500">{errors.subjects.message}</p>}
             </div>
             <Input
               label="Tajriba (yil)"
