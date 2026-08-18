@@ -32,6 +32,7 @@ function unwrapEnvelope(response: AxiosResponse): AxiosResponse {
 // Sharing one in-flight refresh call across all of them avoids that race.
 let refreshPromise: Promise<void> | null = null;
 
+// Refresh tokinni yangilash va bir nechta so'rovni oldini olish uchun
 function refreshAccessToken(): Promise<void> {
   if (!refreshPromise) {
     refreshPromise = axios
