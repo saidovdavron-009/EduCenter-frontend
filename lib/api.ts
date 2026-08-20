@@ -45,6 +45,9 @@ function refreshAccessToken(): Promise<void> {
   return refreshPromise;
 }
 
+// Bu funksiya — auth (autentifikatsiya) xatolarini diagnostika qilish uchun log yozuvchi vosita.
+// Ya'ni foydalanuvchi login sessiyasi tugab, token yangilash (refresh) ham muvaffaqiyatsiz bo'lganda,tm yb
+// nima uchun bu sodir bo'lganini keyinroq tekshirish uchun sessionStoragega yozib qo'yadi.
 function recordAuthFailure(originalError: unknown, refreshError: unknown) {
   if (typeof window === "undefined") return;
   const describe = (e: unknown) => {
@@ -87,6 +90,10 @@ const AUTH_ENDPOINTS_EXCLUDED_FROM_REFRESH = [
   "/auth/reset-password",
 ];
 
+// Bu — Axios'ning response interceptor'i,
+// ya'ni har bir API javobini (muvaffaqiyatli yoki xatoli) "ushlab qoluvchi" markaziy joy.
+// Bu yerda asosiy vazifa: 401 xatosini avtomatik tutish,
+// token'ni yangilashga urinish va kerak bo'lsa foydalanuvchini to'g'ri login sahifasiga yo'naltirish.
 api.interceptors.response.use(
   (response) => unwrapEnvelope(response),
   async (error) => {
@@ -126,7 +133,7 @@ export const authApi = {
   getProfile: () => api.get("/auth/profile"),
   changePassword: (data: { currentPassword: string; newPassword: string }) => api.patch("/auth/change-password", data),
   updateAvatar: (avatarUrl: string) => api.patch("/auth/avatar", { avatarUrl }),
-  updateProfile: (data: { fullName?: string; phone?: string; dob?: string; gender?: string }) =>
+  updateProfile: (data: { fullName?: string; phone?: string; dob?: string; gender?:  string }) =>
     api.patch("/auth/profile", data),
 };
 
